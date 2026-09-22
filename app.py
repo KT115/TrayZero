@@ -2,7 +2,6 @@ import os
 import time
 import datetime
 import sqlite3
-import base64
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -21,6 +20,7 @@ from transformers import (
 BRANCH_FILE = "master_branches.csv"
 DISH_FILE = "master_dishes.csv"
 DB_FILE = "trayzero_audit.db"
+LOGO_FILE = "CDC_810.jpg"
 
 DEFAULT_BRANCHES = [
     {
@@ -76,22 +76,8 @@ FOOD_AND_TRAY_WHITELIST = {
     "dining table": "Tray"
 }
 
-# 大家樂官方 Logo (Base64 編碼，絕不死圖)
-CDC_LOGO_BASE64 = (
-    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 220'>"
-    "<rect width='500' height='220' rx='110' fill='%23F59E0B'/>"
-    "<rect x='15' y='15' width='470' height='190' rx='95' fill='%23FFFFFF'/>"
-    "<rect x='28' y='28' width='444' height='164' rx='82' fill='%23F59E0B'/>"
-    "<rect x='44' y='44' width='412' height='132' rx='66' fill='%23FFFFFF'/>"
-    "<text x='50%25' y='58%25' dominant-baseline='middle' text-anchor='middle' "
-    "fill='%23EA580C' font-family='sans-serif' font-weight='900' font-size='68'>大家樂</text>"
-    "<text x='50%25' y='82%25' dominant-baseline='middle' text-anchor='middle' "
-    "fill='%23EA580C' font-family='sans-serif' font-weight='800' font-size='20' letter-spacing='3'>CAFÉ DE CORAL</text>"
-    "</svg>"
-)
-
 # ==============================================================================
-# 1. 樣式注入：精緻企業級 Dark SaaS UI
+# 1. 樣式注入：高質感 Dark SaaS UI
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -187,13 +173,6 @@ def inject_custom_css():
             color: #CBD5E1;
             line-height: 1.6;
             font-weight: 500;
-        }
-
-        .sidebar-logo-box {
-            text-align: center;
-            padding: 8px 0 16px 0;
-            border-bottom: 1px solid #334155;
-            margin-bottom: 16px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -395,23 +374,23 @@ def auto_detect_dish_heuristic(image, candidate_dishes):
     return dish, conf
 
 # ==============================================================================
-# 4. 宏觀審計建議引擎 (支援 Overall 與單店維度)
+# 4. 宏觀審計建議引擎 (支援 分店維度 + 食物種類維度)
 # ==============================================================================
-def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_branch: str, engine: dict) -> dict:
+def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_branch: str, filter_dish: str, engine: dict) -> dict:
     if df_scope.empty:
         total_trays = 0
         avg_waste = 0.0
         total_loss_hkd = 0.0
         total_co2 = 0.0
-        worst_branch = filter_branch if filter_branch != "ALL" else "中環威靈頓街店"
-        worst_dish = "一哥焗豬扒飯"
+        target_branch_desc = filter_branch if filter_branch != "ALL" else "全港分店"
+        target_dish_desc = filter_dish if filter_dish != "ALL" else "全部餐點品項"
     else:
         total_trays = len(df_scope)
         avg_waste = df_scope["waste_ratio"].mean()
         total_loss_hkd = df_scope["cost_waste_hkd"].sum()
         total_co2 = df_scope["co2_emission_kg"].sum()
-        worst_branch = filter_branch if filter_branch != "ALL" else df_scope.groupby("branch_name")["waste_ratio"].mean().idxmax()
-        worst_dish = df_scope.groupby("dish_name")["waste_ratio"].mean().idxmax()
+        target_branch_desc = filter_branch if filter_branch != "ALL" else df_scope.groupby("branch_name")["waste_ratio"].mean().idxmax()
+        target_dish_desc = filter_dish if filter_dish != "ALL" else df_scope.groupby("dish_name")["waste_ratio"].mean().idxmax()
     
     advisory = {
         "scope": scope_type,
@@ -419,24 +398,25 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_bran
         "avg_waste": avg_waste,
         "total_loss_hkd": total_loss_hkd,
         "total_co2": total_co2,
-        "worst_branch": worst_branch,
-        "worst_dish": worst_dish,
+        "worst_branch": target_branch_desc,
+        "worst_dish": target_dish_desc,
         "action_items": [],
         "executive_memo": ""
     }
 
-    scope_name = "全港集團總部" if filter_branch == "ALL" else f"【{filter_branch}】"
+    branch_context = "全港集團總部" if filter_branch == "ALL" else f"【{filter_branch}】"
+    dish_context = "全品類餐點" if filter_dish == "ALL" else f"【{filter_dish.split(' ')[0]}】"
 
     if scope_type == "DAILY":
         advisory["action_items"].append({
             "type": "directive-chef",
-            "role": f"👨‍🍳 後廚出餐負責人 ({scope_name} Kitchen SOP)",
-            "directive": f"【即時出餐規格調校】全日平均殘食率達 {avg_waste:.1f}%，重點監控「{worst_dish}」。明日午市起針對商業區門市全面換裝 3 號平底飯勺（每份減量 30g 出餐），嚴控熟米積壓。"
+            "role": f"👨‍🍳 後廚出餐負責人 ({branch_context} - {dish_context} SOP)",
+            "directive": f"【即時出餐規格調校】針對 {dish_context} 審計結果，平均殘食率達 {avg_waste:.1f}%。明日午市起針對商業區門市全面換裝 3 號平底飯勺（每份減量 30g 出餐），嚴控熟米積壓。"
         })
         advisory["action_items"].append({
             "type": "directive-pos",
             "role": "🖥️ 門市 POS / Kiosk 運營",
-            "directive": f"【點餐機促銷聯動】明日於「{worst_branch}」點餐機全面置頂彈窗提示「少飯減扣 $2」優惠，引流小食量顧客選用輕量裝。"
+            "directive": f"【點餐機品項促銷聯動】明日於「{target_branch_desc}」點餐機針對 {dish_context} 置頂彈窗「少飯減扣 $2」優惠，引流小食量顧客選用輕量裝。"
         })
         advisory["action_items"].append({
             "type": "directive-mgr",
@@ -445,9 +425,9 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_bran
         })
 
         prompt = (
-            f"You are the operations head of Cafe de Coral. Scope: {scope_name}. "
+            f"You are the operations head of Cafe de Coral. Scope: {branch_context}, Dish category: {dish_context}. "
             f"{total_trays} trays audited, average food waste ratio {avg_waste:.1f}%, total loss HK${total_loss_hkd:.1f}. "
-            f"Target branch: {worst_branch}, highest waste dish: {worst_dish}. "
+            f"Target branch: {target_branch_desc}, target dish: {target_dish_desc}. "
             f"Write a 2-sentence direct operational instruction for tomorrow's store managers."
         )
     else:
@@ -455,12 +435,12 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_bran
         advisory["action_items"].append({
             "type": "directive-chef",
             "role": "🏭 大埔中央廚房 (Central Kitchen)",
-            "directive": f"【主菜規格重新開模】月度數據顯示「{worst_dish}」居殘食榜首。建議中央廚房將厚切豬排/肉排單塊重量規格下調 8%（由 180g 改為 165g），徹底根治過剩浪費。"
+            "directive": f"【主菜規格重新開模】月度數據顯示 {dish_context} 居殘食榜首。建議中央廚房將厚切豬排/肉排單塊重量規格下調 8%（由 180g 改為 165g），徹底根治過剩浪費。"
         })
         advisory["action_items"].append({
             "type": "directive-pos",
             "role": "🏢 總部營運與菜單工程部",
-            "directive": f"【門市分級差異化定價】針對 {scope_name} 客群需求，下月正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率提升 1.8%。"
+            "directive": f"【門市分級差異化定價】針對 {branch_context} 顧客對 {dish_context} 的消費數據，下月正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率提升 1.8%。"
         })
         advisory["action_items"].append({
             "type": "directive-mgr",
@@ -469,7 +449,7 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_bran
         })
 
         prompt = (
-            f"You are the Group CEO of Cafe de Coral Holdings. Scope: {scope_name}. "
+            f"You are the Group CEO of Cafe de Coral Holdings. Scope: {branch_context}, Category: {dish_context}. "
             f"{total_trays} audits, total loss HK${total_loss_hkd:.1f}, average waste {avg_waste:.1f}%. "
             f"Write an executive board-level strategic comment on supply chain and portion resizing."
         )
@@ -480,7 +460,7 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_bran
             outputs = engine["generator"].generate(**inputs, max_new_tokens=80, do_sample=False)
         advisory["executive_memo"] = engine["tokenizer"].decode(outputs[0], skip_special_tokens=True)
     except Exception:
-        advisory["executive_memo"] = f"大家樂營運總部核准：落實 {scope_name} {scope_type} 殘食校準方針，精準優化門市與中央廚房配給量。"
+        advisory["executive_memo"] = f"大家樂營運總部核准：落實 {branch_context} 對 {dish_context} 的 {scope_type} 殘食校準方針，精準優化門市與中央廚房配給量。"
 
     return advisory
 
@@ -657,55 +637,53 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 with st.expander("查看 Bounding Box 偵測物件明細", expanded=True):
                     st.dataframe(pd.DataFrame(latest["item_list"]), use_container_width=True)
 
-def render_mode_2_dashboard(df_branches, engine):
+def render_mode_2_dashboard(df_branches, df_dishes, engine):
     st.markdown("### 📊 大家樂集團總部：全港即時營運大盤 & 戰略建議")
     df_raw = get_all_audit_records()
 
     # --------------------------------------------------------------------------
-    # 核心新增 Dimension 選擇：Overall vs 單店
+    # 核心維度選擇 (Dimensions Selection)：分店維度 + 食物品類維度
     # --------------------------------------------------------------------------
-    st.markdown("#### 🏢 審計檢視維度 (Dimension Scope)")
-    c_dim1, c_dim2 = st.columns([1, 1])
+    st.markdown("#### 🎛️ 審計多維度透視 (Analysis Dimensions)")
+    c_dim_b, c_dim_d = st.columns(2)
     
-    with c_dim1:
-        dimension_mode = st.radio(
-            "切換視角", 
-            ["🌐 Overall 全港總部大盤 (集團彙總)", "🏪 單店深度透視 (Branch Deep-Dive)"],
-            horizontal=True
-        )
+    with c_dim_b:
+        branch_options = ["🌐 全部分店 (Overall Branches)"] + df_branches["name"].tolist()
+        selected_branch_choice = st.selectbox("1. 門市維度過濾", branch_options)
+        selected_branch_filter = "ALL" if "全部" in selected_branch_choice else selected_branch_choice
 
-    selected_branch_filter = "ALL"
-    if "單店" in dimension_mode:
-        with c_dim2:
-            all_branch_names = df_branches["name"].tolist()
-            selected_branch_filter = st.selectbox("選擇指定審計分店", all_branch_names)
-            st.info(f"🔎 目前數據已過濾為：**{selected_branch_filter}** 專屬分析")
+    with c_dim_d:
+        dish_options = ["🍱 全部餐點品項 (Overall Dishes)"] + df_dishes["name"].tolist()
+        selected_dish_choice = st.selectbox("2. 食物種類維度過濾", dish_options)
+        selected_dish_filter = "ALL" if "全部" in selected_dish_choice else selected_dish_choice
 
-    # 依照維度過濾資料庫
-    if not df_raw.empty and selected_branch_filter != "ALL":
-        df_db = df_raw[df_raw["branch_name"] == selected_branch_filter]
-    else:
-        df_db = df_raw
+    # 依照雙維度動態過濾資料庫
+    df_filtered = df_raw.copy() if not df_raw.empty else pd.DataFrame()
+    if not df_filtered.empty:
+        if selected_branch_filter != "ALL":
+            df_filtered = df_filtered[df_filtered["branch_name"] == selected_branch_filter]
+        if selected_dish_filter != "ALL":
+            df_filtered = df_filtered[df_filtered["dish_name"] == selected_dish_filter]
 
     # 頂部 KPI 卡片
-    total_scans = len(df_db) if not df_db.empty else 0
-    avg_waste = df_db["waste_ratio"].mean() if not df_db.empty else 0.0
-    total_waste_hkd = df_db["cost_waste_hkd"].sum() if not df_db.empty else 0.0
-    total_co2 = df_db["co2_emission_kg"].sum() if not df_db.empty else 0.0
+    total_scans = len(df_filtered) if not df_filtered.empty else 0
+    avg_waste = df_filtered["waste_ratio"].mean() if not df_filtered.empty else 0.0
+    total_waste_hkd = df_filtered["cost_waste_hkd"].sum() if not df_filtered.empty else 0.0
+    total_co2 = df_filtered["co2_emission_kg"].sum() if not df_filtered.empty else 0.0
 
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(f"""
         <div class="saas-card">
-            <div class="saas-label">累計審計盤數</div>
+            <div class="saas-label">篩選樣本數</div>
             <div class="saas-value">{total_scans} <span style="font-size: 0.9rem; color: #94A3B8;">TRAYS</span></div>
-            <div class="saas-sub">▲ 100% Real-time sync</div>
+            <div class="saas-sub">▲ 雙維度動態聯動</div>
         </div>
         """, unsafe_allow_html=True)
     with k2:
         st.markdown(f"""
         <div class="saas-card">
-            <div class="saas-label">平均殘食率</div>
+            <div class="saas-label">該維度平均殘食率</div>
             <div class="saas-value" style="color: {'#EF4444' if avg_waste > 25 else '#10B981'};">{avg_waste:.1f}%</div>
             <div class="saas-sub">基準目標: &lt;15.0%</div>
         </div>
@@ -737,30 +715,30 @@ def render_mode_2_dashboard(df_branches, engine):
     this_month_str = datetime.date.today().strftime("%Y-%m")
 
     if "日度" in review_scope:
-        if not df_db.empty and "audit_date" in df_db.columns:
-            available_dates = df_db["audit_date"].dropna().unique().tolist()
+        if not df_filtered.empty and "audit_date" in df_filtered.columns:
+            available_dates = df_filtered["audit_date"].dropna().unique().tolist()
             if not available_dates:
                 available_dates = [today_str]
         else:
             available_dates = [today_str]
 
         selected_date = st.selectbox("選擇覆盤日期", available_dates)
-        df_target = df_db[df_db["audit_date"] == selected_date] if not df_db.empty else pd.DataFrame()
+        df_target = df_filtered[df_filtered["audit_date"] == selected_date] if not df_filtered.empty else pd.DataFrame()
         scope_code = "DAILY"
     else:
-        if not df_db.empty and "audit_month" in df_db.columns:
-            available_months = df_db["audit_month"].dropna().unique().tolist()
+        if not df_filtered.empty and "audit_month" in df_filtered.columns:
+            available_months = df_filtered["audit_month"].dropna().unique().tolist()
             if not available_months:
                 available_months = [this_month_str]
         else:
             available_months = [this_month_str]
 
         selected_month = st.selectbox("選擇審計月份", available_months)
-        df_target = df_db[df_db["audit_month"] == selected_month] if not df_db.empty else pd.DataFrame()
+        df_target = df_filtered[df_filtered["audit_month"] == selected_month] if not df_filtered.empty else pd.DataFrame()
         scope_code = "MONTHLY"
 
     with st.spinner("AI 正在針對該時段與維度數據進行宏觀分析與決策生成..."):
-        advisory = generate_macro_advisory(df_target, scope_code, selected_branch_filter, engine)
+        advisory = generate_macro_advisory(df_target, scope_code, selected_branch_filter, selected_dish_filter, engine)
 
     c_left, c_right = st.columns([1, 2])
     with c_left:
@@ -770,8 +748,8 @@ def render_mode_2_dashboard(df_branches, engine):
             <div style="margin-top: 10px; font-size: 0.92rem; color: #CBD5E1; line-height: 1.9;">
                 • 當期審計樣本: <b>{advisory['total_trays']} 盤</b><br>
                 • 綜合殘食率: <b style="color: #F59E0B;">{advisory['avg_waste']:.1f}%</b><br>
-                • 目標分析對象: <b>{advisory['worst_branch']}</b><br>
-                • 耗損居首餐點: <b>{advisory['worst_dish']}</b>
+                • 目標分析門市: <b>{advisory['worst_branch']}</b><br>
+                • 目標分析餐點: <b>{advisory['worst_dish']}</b>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -789,30 +767,30 @@ def render_mode_2_dashboard(df_branches, engine):
             st.write(advisory["executive_memo"])
 
     st.markdown("---")
-    if not df_db.empty:
+    if not df_filtered.empty:
         col_c1, col_c2 = st.columns([1, 1])
         with col_c1:
-            st.markdown("##### 🏢 真實平均殘食率 (%)")
-            branch_stat = df_db.groupby("branch_name")["waste_ratio"].mean().reset_index()
+            st.markdown("##### 🏢 各門市平均殘食率 (%)")
+            branch_stat = df_filtered.groupby("branch_name")["waste_ratio"].mean().reset_index()
             st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#F59E0B")
 
         with col_c2:
-            st.markdown("##### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
-            level_stat = df_db.groupby("branch_level")["cost_waste_hkd"].sum().reset_index()
-            st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd", color="#EF4444")
+            st.markdown("##### 🍱 各食物種類耗損金額分佈 (HK$)")
+            dish_stat = df_filtered.groupby("dish_name")["cost_waste_hkd"].sum().reset_index()
+            st.bar_chart(dish_stat, x="dish_name", y="cost_waste_hkd", color="#EF4444")
 
-        st.markdown("##### 📋 SQLite 歷史審計流水表")
-        st.dataframe(df_db, use_container_width=True)
+        st.markdown("##### 📋 SQLite 歷史審計流水表 (當前維度)")
+        st.dataframe(df_filtered, use_container_width=True)
 
-        csv_data = df_db.to_csv(index=False).encode("utf-8")
+        csv_data = df_filtered.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="📥 匯出當前維度審計數據 (CSV)",
             data=csv_data,
-            file_name=f"cafedecoral_{selected_branch_filter}_audit_{datetime.date.today()}.csv",
+            file_name=f"cafedecoral_audit_export_{datetime.date.today()}.csv",
             mime="text/csv"
         )
     else:
-        st.info("💡 目前維度尚無過盤紀錄。請先在 Mode 1 執行掃描測試！")
+        st.info("💡 目前所選維度（分店/餐點）尚無過盤紀錄。請至 Mode 1 執行掃描測試！")
 
 def render_mode_3_master_data(df_branches, df_dishes):
     st.markdown("### ⚙️ 基礎資料管理 (Master Data Management)")
@@ -897,21 +875,11 @@ def main():
 
     render_header()
 
-    # 側邊欄 Logo：優先讀取同目錄下的 CDC_810.jpg，若無則平滑使用內嵌 Base64，絕不死圖
-    local_logo_path = "./CDC_810.jpg"
-    if os.path.exists(local_logo_path):
-        with open(local_logo_path, "rb") as f:
-            encoded_img = base64.b64encode(f.read()).decode("utf-8")
-        logo_src = f"data:image/jpeg;base64,{encoded_img}"
+    # 側邊欄 Logo：直接調用本地正版圖檔，徹底杜絕 Base64 或 SVG 變形問題
+    if os.path.exists(LOGO_FILE):
+        st.sidebar.image(LOGO_FILE, use_container_width=True)
     else:
-        logo_src = CDC_LOGO_BASE64
-
-    st.sidebar.markdown(f"""
-    <div class="sidebar-logo-box">
-        <img src="{logo_src}" style="width: 170px; border-radius: 8px; margin-bottom: 6px;" alt="Café de Coral Logo">
-        <div style="font-size: 0.76rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.05em;">大家樂集團 • 智能審計系統</div>
-    </div>
-    """, unsafe_allow_html=True)
+        st.sidebar.warning("⚠️ 請確認 CDC_810.jpg 已放置於專案根目錄")
 
     st.sidebar.title("🎛️ 系統控制台")
     selected_mode = st.sidebar.radio(
@@ -935,7 +903,7 @@ def main():
     if selected_mode == "Mode 1: 前線餐盤智能偵測 (Tray Station)":
         render_mode_1_detection(df_branches, df_dishes, engine)
     elif selected_mode == "Mode 2: 總部即時營運大盤 (HQ Dashboard)":
-        render_mode_2_dashboard(df_branches, engine)
+        render_mode_2_dashboard(df_branches, df_dishes, engine)
     else:
         render_mode_3_master_data(df_branches, df_dishes)
 
