@@ -14,7 +14,7 @@ from transformers import (
 )
 
 # ==============================================================================
-# 0. 全域常數與設定 (Global Constants & Configuration)
+# 0. Global Constants & Configuration
 # ==============================================================================
 BRANCH_FILE = "master_branches.csv"
 DISH_FILE = "master_dishes.csv"
@@ -28,7 +28,7 @@ FOOD_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. 樣式注入：高質感 Clean UI + 側邊欄居中排版
+# 1. Clean UI Theme (Minimalist Elevated SaaS + Centered Elements)
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -161,7 +161,7 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. 資料庫與檔案存取模組 (Database & Storage)
+# 2. Database & Data Storage Layer
 # ==============================================================================
 def db_conn(): 
     return sqlite3.connect(DB_FILE)
@@ -217,7 +217,7 @@ def load_master_data():
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI 模型推論引擎 (AI Inference Engine)
+# 3. AI Inference Engine (PyTorch & Transformers)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
@@ -294,7 +294,7 @@ def auto_detect_dish(image, candidate_dishes):
     return candidate_dishes[idx], 0.88
 
 # ==============================================================================
-# 4. 宏觀建議生成模組 (Macro Advisory Engine)
+# 4. Macro Advisory Synthesis Engine (Bi-lingual)
 # ==============================================================================
 def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     if df.empty:
@@ -340,7 +340,7 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     return {"total": n, "avg_w": avg_w, "branch": t_branch, "dish": t_dish, "actions": actions, "memo": memo}
 
 # ==============================================================================
-# 5. 各模式畫面渲染 (View Renderers)
+# 5. UI Views & Component Rendering (Bi-lingual)
 # ==============================================================================
 def render_header():
     st.markdown("""
@@ -383,10 +383,14 @@ def render_mode1(df_b, df_d, engine):
             if m_cam: 
                 img_cap, do_scan = Image.open(m_cam).convert("RGB"), True
         else:
-            up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"])
-            if up:
+            # 關鍵修改：上傳圖片後自動觸發分析，完全不需要手動按鈕！
+            up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
+            if up is not None:
                 img_cap = Image.open(up).convert("RGB")
-                if st.button("🚀 執行上傳分析 (Analyze Uploaded Image)", type="primary"): 
+                # 以檔名和大小作為唯一標識，避免重覆計算
+                file_sig = f"{up.name}_{up.size}"
+                if file_sig != st.session_state.get("last_uploaded_sig"):
+                    st.session_state["last_uploaded_sig"] = file_sig
                     do_scan = True
 
         if img_cap and do_scan:
@@ -457,7 +461,7 @@ def render_mode2(df_b, df_d, engine):
         if sel_d != "ALL": 
             df_filtered = df_filtered[df_filtered["dish_name"] == sel_d]
 
-    # KPI 統計
+    # KPI Statistics
     n = len(df_filtered)
     avg_w = df_filtered["waste_ratio"].mean() if n > 0 else 0.0
     tot_hkd = df_filtered["cost_waste_hkd"].sum() if n > 0 else 0.0
@@ -573,7 +577,7 @@ def render_mode3(df_b, df_d):
             st.rerun()
 
 # ==============================================================================
-# 6. 主程式進入點 (Main Application Entry Point)
+# 6. Main Execution Pipeline
 # ==============================================================================
 def main():
     st.set_page_config(
@@ -613,10 +617,10 @@ def main():
         reset_db()
         st.session_state["latest"] = None
         st.session_state["last_h"] = None
+        st.session_state["last_uploaded_sig"] = None
         st.sidebar.success("✅ 資料庫已完全清空！(Database cleared!)")
         st.rerun()
 
-    # 依選擇模式路由
     if mode.startswith("Mode 1"): 
         render_mode1(df_b, df_d, engine)
     elif mode.startswith("Mode 2"): 
