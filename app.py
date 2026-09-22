@@ -28,7 +28,7 @@ FOOD_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. Clean UI Theme (Minimalist Elevated SaaS + Centered Elements)
+# 1. Clean UI Theme + Frontend Flow Stepper Styles
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -36,16 +36,14 @@ def inject_custom_css():
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
         
         html, body, [class*="css"] {
-            font-family: 'Plus Jakarta Sans', 'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'Plus Jakarta Sans', 'Noto Sans TC', sans-serif;
         }
 
-        /* Clean Soft Canvas */
         .stApp {
             background-color: #F8FAFC !important;
             color: #0F172A;
         }
 
-        /* Crisp Sidebar */
         [data-testid="stSidebar"] {
             background-color: #FFFFFF !important;
             border-right: 1px solid #E2E8F0 !important;
@@ -75,7 +73,7 @@ def inject_custom_css():
             background: #FFFFFF;
             border-radius: 16px;
             padding: 18px 26px;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             border: 1px solid #E2E8F0;
             box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.03);
             display: flex;
@@ -90,6 +88,53 @@ def inject_custom_css():
             letter-spacing: -0.01em;
             margin: 0 !important;
             white-space: nowrap !important;
+        }
+
+        /* Frontend Flow Stepper Container */
+        .flow-stepper-container {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 14px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.02);
+        }
+
+        .flow-step-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #64748B;
+        }
+        .flow-step-active {
+            color: #2563EB;
+            font-weight: 700;
+        }
+        .flow-step-num {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #F1F5F9;
+            color: #64748B;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            margin-right: 8px;
+            font-weight: 800;
+        }
+        .flow-step-num-active {
+            background: #2563EB;
+            color: #FFFFFF;
+        }
+        .flow-arrow {
+            color: #CBD5E1;
+            font-weight: bold;
+            font-size: 0.85rem;
         }
 
         /* Clean Micro-Elevated Cards */
@@ -122,13 +167,6 @@ def inject_custom_css():
             font-weight: 800;
             color: #0F172A;
             line-height: 1.1;
-        }
-
-        .clean-sub {
-            font-size: 0.78rem;
-            color: #10B981;
-            font-weight: 600;
-            margin-top: 6px;
         }
 
         /* Directives & Action Cards */
@@ -340,7 +378,7 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     return {"total": n, "avg_w": avg_w, "branch": t_branch, "dish": t_dish, "actions": actions, "memo": memo}
 
 # ==============================================================================
-# 5. UI Views & Component Rendering (Bi-lingual)
+# 5. UI Views & Frontend Flow Stepper
 # ==============================================================================
 def render_header():
     st.markdown("""
@@ -349,7 +387,45 @@ def render_header():
     </div>
     """, unsafe_allow_html=True)
 
+def render_frontend_stepper(current_step: int = 1):
+    """前端視覺化流程指示條 (Frontend Flow Stepper)"""
+    s1_cls = "flow-step-active" if current_step >= 1 else ""
+    s2_cls = "flow-step-active" if current_step >= 2 else ""
+    s3_cls = "flow-step-active" if current_step >= 3 else ""
+    s4_cls = "flow-step-active" if current_step >= 4 else ""
+
+    n1_cls = "flow-step-num-active" if current_step >= 1 else ""
+    n2_cls = "flow-step-num-active" if current_step >= 2 else ""
+    n3_cls = "flow-step-num-active" if current_step >= 3 else ""
+    n4_cls = "flow-step-num-active" if current_step >= 4 else ""
+
+    st.markdown(f"""
+    <div class="flow-stepper-container">
+        <div class="flow-step-item {s1_cls}">
+            <span class="flow-step-num {n1_cls}">1</span> 畫面輸入 (Ingestion)
+        </div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-step-item {s2_cls}">
+            <span class="flow-step-num {n2_cls}">2</span> 門禁過濾 (Quality Gate)
+        </div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-step-item {s3_cls}">
+            <span class="flow-step-num {n3_cls}">3</span> AI 分割分析 (Inference)
+        </div>
+        <div class="flow-arrow">&rarr;</div>
+        <div class="flow-step-item {s4_cls}">
+            <span class="flow-step-num {n4_cls}">4</span> 看板歸檔 (Sync & Report)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
 def render_mode1(df_b, df_d, engine):
+    # 呈現前端動態流程步驟條
+    current_step = 1
+    if st.session_state.get("latest") is not None:
+        current_step = 4
+    render_frontend_stepper(current_step)
+
     if df_b.empty or df_d.empty:
         st.warning("⚠️ 門市或餐點清單為空！請先切換至「Mode 3」上傳 CSV。\n(Store or menu database is empty. Please navigate to 'Mode 3' to bulk upload CSV files.)")
         return
@@ -383,16 +459,15 @@ def render_mode1(df_b, df_d, engine):
             if m_cam: 
                 img_cap, do_scan = Image.open(m_cam).convert("RGB"), True
         else:
-            # 關鍵修改：上傳圖片後自動觸發分析，完全不需要手動按鈕！
             up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
             if up is not None:
                 img_cap = Image.open(up).convert("RGB")
-                # 以檔名和大小作為唯一標識，避免重覆計算
                 file_sig = f"{up.name}_{up.size}"
                 if file_sig != st.session_state.get("last_uploaded_sig"):
                     st.session_state["last_uploaded_sig"] = file_sig
                     do_scan = True
 
+        # 執行推論與流程推進
         if img_cap and do_scan:
             with st.spinner("AI 偵測中: YOLOS 正在過濾非餐盤目標並辨識殘食..."):
                 anno_img, items, ratio, primary_cat, is_food = detect_tray(img_cap, engine)
@@ -421,6 +496,7 @@ def render_mode1(df_b, df_d, engine):
                     "ratio": ratio, "cat": primary_cat, "cost": loss_hkd, "branch": b_name, "items": items
                 }
                 st.toast("✅ 審計記錄成功歸檔！(Tray audit recorded and indexed!)")
+                st.rerun()
 
     with c2:
         st.markdown("#### 🎯 前線掃描結果 (Latest Scan Result)")
