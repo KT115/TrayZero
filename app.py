@@ -15,7 +15,7 @@ from transformers import (
 )
 
 # ==============================================================================
-# 0. 全域設定與預設資料
+# 0. 全域常數與預設資料
 # ==============================================================================
 BRANCH_FILE = "master_branches.csv"
 DISH_FILE = "master_dishes.csv"
@@ -58,7 +58,6 @@ DEFAULT_DISHES = [
     {"dish_id": "D04", "name": "香辣肉燥肉餅飯 (Minced Pork Patty Rice)", "main_carb": "白米飯", "protein": "煎肉餅"}
 ]
 
-# 合法食物與餐具白名單 (過濾人物 person、領帶 tie、手機等非餐盤物件)
 FOOD_AND_TRAY_WHITELIST = {
     "bowl": "Rice",
     "cake": "Rice",
@@ -77,7 +76,108 @@ FOOD_AND_TRAY_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. 資料庫模組 (自動 Migration，解決 no column named audit_date)
+# 1. 注入 Dribbble 現代 SaaS 深色質感 CSS (SaaS UI Stylesheet)
+# ==============================================================================
+def inject_custom_css():
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+        
+        html, body, [class*="css"] {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        /* 頂部主標頭漸層膠囊 */
+        .brand-header {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.12) 0%, rgba(239, 68, 68, 0.08) 100%);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Dribbble 風格指標卡 (Metric Card) */
+        .saas-card {
+            background: #181E29;
+            border: 1px solid #283347;
+            border-radius: 14px;
+            padding: 18px 20px;
+            margin-bottom: 14px;
+            transition: all 0.25s ease-in-out;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+        .saas-card:hover {
+            border-color: #F59E0B;
+            transform: translateY(-2px);
+        }
+
+        .saas-label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #94A3B8;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .saas-value {
+            font-size: 1.85rem;
+            font-weight: 800;
+            color: #F8FAFC;
+            line-height: 1.1;
+        }
+
+        .saas-sub {
+            font-size: 0.8rem;
+            color: #10B981;
+            font-weight: 600;
+            margin-top: 6px;
+        }
+
+        /* 標籤小徽章 (Pill Badge) */
+        .pill-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            margin-right: 6px;
+        }
+        .pill-live { background: rgba(16, 185, 129, 0.18); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.35); }
+        .pill-coral { background: rgba(245, 158, 11, 0.18); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.35); }
+        .pill-level { background: rgba(59, 130, 246, 0.18); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.35); }
+
+        /* 建議決策卡片 (Advisory Directive Cards) */
+        .directive-card {
+            border-radius: 12px;
+            padding: 16px 18px;
+            margin-bottom: 12px;
+            border-left: 4px solid;
+            background: #151B26;
+        }
+        .directive-chef { border-color: #EF4444; }
+        .directive-pos { border-color: #F59E0B; }
+        .directive-mgr { border-color: #3B82F6; }
+
+        .directive-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #F1F5F9;
+            margin-bottom: 6px;
+        }
+        .directive-body {
+            font-size: 0.82rem;
+            color: #CBD5E1;
+            line-height: 1.5;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+# ==============================================================================
+# 2. 資料庫模組
 # ==============================================================================
 def init_sqlite_db():
     try:
@@ -100,7 +200,6 @@ def init_sqlite_db():
             """)
             conn.commit()
 
-            # 檢查舊表是否缺少欄位並自動補齊 (Schema Migration)
             cursor.execute("PRAGMA table_info(audit_logs)")
             existing_columns = [col[1] for col in cursor.fetchall()]
             
@@ -110,7 +209,7 @@ def init_sqlite_db():
                 cursor.execute("ALTER TABLE audit_logs ADD COLUMN audit_month TEXT")
             conn.commit()
     except Exception as e:
-        st.error(f"資料庫初始化/升級失敗: {e}")
+        st.error(f"資料庫初始化失敗: {e}")
 
 def save_audit_record(record):
     try:
@@ -164,7 +263,7 @@ def load_master_meta():
     return df_b, df_d
 
 # ==============================================================================
-# 2. AI 模型引擎
+# 3. AI 模型引擎
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def init_ai_pipeline_engine():
@@ -188,10 +287,6 @@ def init_ai_pipeline_engine():
     }
 
 def run_tray_waste_detection(image, engine, threshold=0.20):
-    """
-    執行 YOLOS 物體偵測，並加入合法食物與餐盤白名單過濾
-    避免人臉、人身、背景雜物被誤判為食物殘渣
-    """
     inputs = engine["processor"](images=image, return_tensors="pt").to(engine["device"])
     with torch.no_grad():
         outputs = engine["detector"](**inputs)
@@ -208,14 +303,13 @@ def run_tray_waste_detection(image, engine, threshold=0.20):
     detected_items = []
     waste_box_area = 0
     
-    color_map = {"Rice": "#E74C3C", "Meat": "#E67E22", "Veg_Soup": "#27AE60", "Tray": "#3498DB"}
+    color_map = {"Rice": "#EF4444", "Meat": "#F59E0B", "Veg_Soup": "#10B981", "Tray": "#3B82F6"}
     primary_category = "光盤 (Clean Plate)"
     valid_food_found = False
 
     for box, score, label_id in zip(results["boxes"].tolist(), results["scores"].tolist(), results["labels"].tolist()):
         raw_label = engine["detector"].config.id2label.get(label_id, "item")
         
-        # 關鍵防護：非食物或餐具物件（如人像 person、領帶 tie 等）直接忽略，不計入殘食
         if raw_label not in FOOD_AND_TRAY_WHITELIST:
             continue
             
@@ -233,7 +327,7 @@ def run_tray_waste_detection(image, engine, threshold=0.20):
             display_name = f"配菜/醬汁殘留 ({raw_label})"
             if primary_category == "光盤 (Clean Plate)":
                 primary_category = "配菜/醬汁殘留"
-        else: # Tray / Table
+        else:
             display_name = "餐盤定位 (Tray Baseline)"
 
         xmin, ymin = max(0, box[0]), max(0, box[1])
@@ -243,11 +337,11 @@ def run_tray_waste_detection(image, engine, threshold=0.20):
         if category != "Tray":
             waste_box_area += box_area
         
-        c = color_map.get(category, "#E74C3C")
-        draw.rectangle([xmin, ymin, xmax, ymax], outline=c, width=4)
+        c = color_map.get(category, "#EF4444")
+        draw.rectangle([xmin, ymin, xmax, ymax], outline=c, width=3)
         caption = f"{display_name} {score:.1%}"
-        draw.rectangle([xmin, max(0, ymin - 20), xmin + len(caption) * 8, ymin], fill=c)
-        draw.text((xmin + 4, max(0, ymin - 18)), caption, fill="white")
+        draw.rectangle([xmin, max(0, ymin - 18), xmin + len(caption) * 7.5, ymin], fill=c)
+        draw.text((xmin + 4, max(0, ymin - 16)), caption, fill="white")
         
         detected_items.append({
             "分類項目": display_name,
@@ -279,7 +373,7 @@ def auto_detect_dish_heuristic(image, candidate_dishes):
     return dish, conf
 
 # ==============================================================================
-# 3. 宏觀審計建議引擎 (供 Mode 2 Dashboard 使用)
+# 4. 宏觀審計建議引擎
 # ==============================================================================
 def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dict) -> dict:
     if df_scope.empty:
@@ -290,7 +384,6 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
     total_loss_hkd = df_scope["cost_waste_hkd"].sum()
     total_co2 = df_scope["co2_emission_kg"].sum()
     
-    top_waste_cat = df_scope["primary_waste"].value_counts().idxmax()
     worst_branch = df_scope.groupby("branch_name")["waste_ratio"].mean().idxmax()
     worst_dish = df_scope.groupby("dish_name")["waste_ratio"].mean().idxmax()
     
@@ -302,7 +395,6 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
         "total_co2": total_co2,
         "worst_branch": worst_branch,
         "worst_dish": worst_dish,
-        "top_waste_cat": top_waste_cat,
         "action_items": [],
         "executive_memo": ""
     }
@@ -310,25 +402,30 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
     if scope_type == "DAILY":
         if avg_waste > 25.0:
             advisory["action_items"].append({
-                "role": "👨‍🍳 後廚出餐負責人",
-                "directive": f"【明日出餐規格調校】全日平均殘食率達 {avg_waste:.1f}%，超標警告！特別是「{worst_dish}」。要求明日午市起，全面更換為 3 號標準平底飯勺（每份減量 30g 出餐）。"
+                "type": "directive-chef",
+                "role": "👨‍🍳 後廚出餐負責人 (Kitchen SOP)",
+                "directive": f"【即時出餐規格調校】全日平均殘食率達 {avg_waste:.1f}% 超標！特別是「{worst_dish}」。明日午市起全面更換為 3 號標準平底飯勺（每份減量 30g 出餐）。"
             })
             advisory["action_items"].append({
+                "type": "directive-pos",
                 "role": "🖥️ 門市 POS / Kiosk 運營",
-                "directive": f"【點餐機促銷聯動】明日於「{worst_branch}」點餐機全面上架「少飯減扣 $2」優惠，並置頂推廣低碳小食量選項。"
+                "directive": f"【點餐機促銷聯動】明日於「{worst_branch}」點餐機全面置頂彈窗「少飯減扣 $2」優惠，引流小食量白領選用輕量裝。"
             })
             advisory["action_items"].append({
+                "type": "directive-mgr",
                 "role": "📦 門市經理 (Store Manager)",
-                "directive": f"【晚市/次日蒸煮下調】以今日耗損估算，明日電飯煲煮米批次請減少 2 鍋（下調約 10% 產能），單日預計防損挽回 HK$ {round(total_loss_hkd * 0.4):,.0f}。"
+                "directive": f"【電飯煲蒸煮下調】明日煮米批次減少 2 鍋（下調約 10% 產能），單日預計防損挽回 HK$ {round(total_loss_hkd * 0.4):,.0f}。"
             })
         else:
             advisory["action_items"].append({
-                "role": "👨‍🍳 後廚出餐負責人",
-                "directive": f"【維持標準出餐】本日全港平均殘食率為 {avg_waste:.1f}%，整體表現優良。各店維持現有標準份量，重點維持「{worst_branch}」的出餐穩定度。"
+                "type": "directive-chef",
+                "role": "👨‍🍳 後廚出餐負責人 (Kitchen SOP)",
+                "directive": f"【維持標準出餐】本日全港平均殘食率僅為 {avg_waste:.1f}%，表現極為理想。各店維持現有標準份量，重點維持「{worst_branch}」品質穩定。"
             })
             advisory["action_items"].append({
+                "type": "directive-mgr",
                 "role": "📦 門市經理 (Store Manager)",
-                "directive": "【庫存平穩進貨】明日進貨維持基準採購量，留意尖峰備料。"
+                "directive": "【庫存平穩進貨】明日進貨維持基準採購量，尖峰時段保持常規備料。"
             })
 
         prompt = (
@@ -338,18 +435,21 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
             f"Write a 2-sentence direct operational instruction for tomorrow's store managers."
         )
     else:
-        monthly_saving_potential = total_loss_hkd * 12
+        monthly_saving = total_loss_hkd * 12
         advisory["action_items"].append({
+            "type": "directive-chef",
             "role": "🏭 大埔中央廚房 (Central Kitchen)",
-            "directive": f"【主菜規格重新開模】月度數據顯示「{worst_dish}」長期居殘食榜首。建議中央廚房將厚切豬排/肉排單塊重量規格下調 8%（由 180g 改為 165g），徹底根治過剩浪費。"
+            "directive": f"【主菜規格重新開模】月度數據顯示「{worst_dish}」居殘食榜首。建議中央廚房將厚切豬排/肉排單塊重量規格下調 8%（由 180g 改為 165g），徹底根治過剩浪費。"
         })
         advisory["action_items"].append({
+            "type": "directive-pos",
             "role": "🏢 總部營運與菜單工程部",
-            "directive": f"【門市分級差異化定價】數據印證 Level A (商業區) 白領控醣需求顯著。下月起於商業區 40 間門市正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率可提升 1.8%。"
+            "directive": f"【門市分級差異化定價】數據印證 Level A (商業區) 白領控醣需求顯著。下月起於商業區門市正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率提升 1.8%。"
         })
         advisory["action_items"].append({
+            "type": "directive-mgr",
             "role": "🌱 集團 ESG 與永續發展委員會",
-            "directive": f"【年化碳減量與防損核算】本月累計減廢預計年化防損可達 HK$ {monthly_saving_potential:,.0f}，月減碳 {total_co2:.1f} kg CO2e，數據已自動同步至年度可持續發展報告 (ESG Report)。"
+            "directive": f"【年化碳減量與防損核算】本月累計減廢預計年化防損達 HK$ {monthly_saving:,.0f}，月減碳 {total_co2:.1f} kg CO2e，數據已自動同步至年度可持續發展報告 (ESG Report)。"
         })
 
         prompt = (
@@ -369,20 +469,43 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
     return advisory
 
 # ==============================================================================
-# 4. 畫面渲染控制
+# 5. UI 渲染控制
 # ==============================================================================
-def render_mode_1_detection(df_branches, df_dishes, engine):
-    st.subheader("📸 Mode 1: 前線餐盤智慧掃描機 (即時過盤與入庫記錄)")
-    st.caption("職責：前線回收台高速掃描 ➔ AI 自動框選殘食與辨識菜品 ➔ 即時寫入資料庫 ➔ 宏觀建議請至 Mode 2 查看")
+def render_header():
+    st.markdown("""
+    <div class="brand-header">
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+            <div>
+                <span class="pill-badge pill-live">● SYSTEM ONLINE</span>
+                <span class="pill-badge pill-coral">CAFÉ DE CORAL HOLDINGS</span>
+                <span class="pill-badge pill-level">DUAL TRANSFORMER ENGINE</span>
+                <h2 style="color: #F8FAFC; margin-top: 10px; margin-bottom: 4px; font-weight: 800; letter-spacing: -0.02em;">
+                    🍽️ PlateMetrics AI 智能餐盤殘食審計與中央調配系統
+                </h2>
+                <div style="color: #94A3B8; font-size: 0.88rem;">
+                    ISOM5240 Group Project | <code>YOLOS-tiny (Object Detection)</code> &rarr; <code>Flan-T5 (Executive Decision)</code>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
+def render_mode_1_detection(df_branches, df_dishes, engine):
     col_left, col_right = st.columns([1.1, 0.9])
 
     with col_left:
-        st.markdown("##### 🏢 執勤門市與掃描設置")
+        st.markdown("#### 🏢 執勤門市與掃描設置")
         branch_names = df_branches["name"].tolist()
         selected_branch_name = st.selectbox("執勤門市", branch_names)
         b_row = df_branches[df_branches["name"] == selected_branch_name].iloc[0]
-        st.caption(f"門市等級: `{b_row['level']}` | 標準飯量: `{b_row['base_rice_g']}g` | 區域: `{b_row['district']}`")
+        
+        st.markdown(f"""
+        <div style="margin-bottom: 12px;">
+            <span class="pill-badge pill-level">{b_row['level']}</span>
+            <span class="pill-badge pill-coral">{b_row['district']}</span>
+            <span style="font-size: 0.8rem; color: #94A3B8;">標配米飯: <b>{b_row['base_rice_g']}g</b></span>
+        </div>
+        """, unsafe_allow_html=True)
 
         auto_dish_toggle = st.checkbox("🤖 啟用 AI 自動辨識餐點類型 (Auto-Detect Dish)", value=True)
         candidate_dishes = df_dishes["name"].tolist()
@@ -397,7 +520,6 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
         should_run_detection = False
 
         if scan_mode == "🟢 Live Camera 長開 (靜止自動偵測)":
-            st.markdown("**即時視頻流 (Live Camera 保持開啟中)**")
             live_shot = st.camera_input("持續監控畫面", key="permanent_live_cam")
             if live_shot:
                 captured_image = Image.open(live_shot).convert("RGB")
@@ -405,7 +527,7 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 if current_frame_hash != st.session_state.get("last_scanned_hash"):
                     countdown_box = st.empty()
                     for s in range(2, 0, -1):
-                        countdown_box.warning(f"⏳ 偵測到畫面放入，靜止鎖定中... {s} 秒")
+                        countdown_box.warning(f"⏳ 偵測到餐盤放入，靜止鎖定中... {s} 秒")
                         time.sleep(1)
                     countdown_box.success("🎯 鎖定完成！自動觸發 AI 審計分析...")
                     st.session_state["last_scanned_hash"] = current_frame_hash
@@ -426,33 +548,31 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 if st.button("🚀 執行上傳相片偵測", type="primary"):
                     should_run_detection = True
 
-        selected_dish = None
-        if captured_image:
-            if auto_dish_toggle:
-                detected_dish, dish_conf = auto_detect_dish_heuristic(captured_image, candidate_dishes)
-                st.success(f"🔍 **AI 識別餐點參考**：`{detected_dish}` (置信度: {dish_conf:.1%})")
-                selected_dish = detected_dish
-            else:
-                selected_dish = st.selectbox("抽檢餐點 (手動選擇)", candidate_dishes)
-
-        # 執行推論與寫入 DB
+        # 門禁檢查與推論
         if captured_image and should_run_detection:
             with st.spinner("AI 偵測中: YOLOS 正在過濾非餐盤目標並辨識殘食..."):
                 annotated_img, item_list, waste_ratio, primary_cat, valid_food_found = run_tray_waste_detection(captured_image, engine)
 
             if not valid_food_found:
-                st.warning("⚠️ 影像中未檢測到合法餐盤或食物物件（已自動過濾人物/背景）。此記錄不計入殘食審計。")
+                st.error("🚫 偵測失敗：鏡頭前未發現任何大家樂餐盤或食物物件！（已自動過濾人物/背景）")
                 st.session_state["latest_result"] = {
                     "image": annotated_img,
                     "item_list": [],
                     "waste_ratio": 0.0,
-                    "primary_cat": "無效目標 (非食物)",
+                    "primary_cat": "無有效餐盤",
                     "branch_name": selected_branch_name,
-                    "dish_name": "無效餐盤",
+                    "dish_name": "未識別 (非食物)",
                     "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "cost": 0.0
                 }
             else:
+                if auto_dish_toggle:
+                    detected_dish, dish_conf = auto_detect_dish_heuristic(captured_image, candidate_dishes)
+                    st.success(f"🍱 **AI 識別餐點確認**：`{detected_dish}` (置信度: {dish_conf:.1%})")
+                    selected_dish = detected_dish
+                else:
+                    selected_dish = st.selectbox("抽檢餐點 (手動微調)", candidate_dishes)
+
                 unit_rice_cost = 0.015
                 cut_g = 40 if "Level A" in str(b_row["level"]) else 20
                 saved_hkd = round(cut_g * unit_rice_cost * 25, 1)
@@ -475,7 +595,7 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                     "cost_waste_hkd": saved_hkd,
                     "co2_emission_kg": saved_co2
                 }
-                is_saved = save_audit_record(db_record)
+                save_audit_record(db_record)
 
                 st.session_state["latest_result"] = {
                     "image": annotated_img,
@@ -487,42 +607,62 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                     "timestamp": timestamp_str,
                     "cost": saved_hkd
                 }
-                if is_saved:
-                    st.toast("✅ 掃描成功！紀錄已成功歸檔至資料庫。")
+                st.toast("✅ 餐盤掃描成功！紀錄已成功歸檔至資料庫。")
 
-    # 右側：最新偵測看板
     with col_right:
-        st.markdown("### 🎯 前線掃描結果 (Latest Tray Result)")
+        st.markdown("#### 🎯 前線掃描結果 (Latest Result)")
         latest = st.session_state.get("latest_result")
 
         if not latest:
-            st.info("💡 尚未執行偵測。請保持相機開啟並放置餐盤，或手動拍攝/上傳。")
-            placeholder_img = Image.new("RGB", (400, 260), color=(240, 240, 240))
+            placeholder_img = Image.new("RGB", (400, 260), color=(20, 24, 33))
             d = ImageDraw.Draw(placeholder_img)
-            d.text((120, 120), "等待餐盤輸入中...", fill=(150, 150, 150))
-            st.image(placeholder_img, caption="即時預覽看板", use_container_width=True)
+            d.text((120, 120), "WAITING FOR TRAY INPUT...", fill=(100, 116, 139))
+            st.image(placeholder_img, caption="即時監控看板", use_container_width=True)
         else:
             st.image(latest["image"], caption=f"審計影像: {latest['dish_name']} ({latest['timestamp']})", use_container_width=True)
 
-            m1, m2, m3 = st.columns(3)
-            m1.metric("殘食佔比", f"{latest['waste_ratio']:.1%}")
-            m2.metric("主要殘留", latest["primary_cat"])
-            m3.metric("推算耗損", f"HK$ {latest['cost']}")
+            k1, k2, k3 = st.columns(3)
+            with k1:
+                st.markdown(f"""
+                <div class="saas-card">
+                    <div class="saas-label">殘食佔比</div>
+                    <div class="saas-value" style="color: {'#EF4444' if latest['waste_ratio'] > 0.3 else '#10B981'};">
+                        {latest['waste_ratio']:.1%}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with k2:
+                st.markdown(f"""
+                <div class="saas-card">
+                    <div class="saas-label">主要殘留</div>
+                    <div class="saas-value" style="font-size: 1.15rem; margin-top: 8px;">
+                        {latest['primary_cat'].split(' ')[0]}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            with k3:
+                st.markdown(f"""
+                <div class="saas-card">
+                    <div class="saas-label">推算損耗</div>
+                    <div class="saas-value" style="color: #F59E0B;">
+                        HK${latest['cost']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
-            if latest["primary_cat"] == "無效目標 (非食物)":
-                st.warning("⚠️ 此鏡頭畫面被判定為非食物/自拍影像，未寫入後台數據庫。")
+            if latest["primary_cat"] == "無有效餐盤":
+                st.warning("⚠️ 此鏡頭畫面被判定為人物或非食物影像，系統已拒絕入庫。")
             else:
-                st.success(f"📥 **已成功歸檔**：記錄已綁定至 `{latest['branch_name']}`。總部營運經理可在 Mode 2 查看日/月度整體建議。")
+                st.success(f"📥 **記錄已歸檔**：已綁定至 `{latest['branch_name']}`。宏觀建議請至 Mode 2 查看。")
 
             if latest.get("item_list"):
                 with st.expander("查看 Bounding Box 偵測物件明細", expanded=True):
                     st.dataframe(pd.DataFrame(latest["item_list"]), use_container_width=True)
 
 def render_mode_2_dashboard(engine):
-    st.subheader("📊 Mode 2: 大家樂集團總部 - 跨分店即時營運大盤 & 日/月度戰略建議")
-    st.caption("職責：讀取真實審計資料庫 ➔ 以「日」與「月」為維度聚合統計 ➔ 由 Flan-T5 產出宏觀經營與供應鏈建議")
-
+    st.markdown("### 📊 大家樂集團總部：全港即時營運大盤 & 戰略建議")
     df_db = get_all_audit_records()
+    
     if df_db.empty:
         st.warning("⚠️ 目前資料庫中無任何審計數據。請先至「Mode 1」完成數次掃描測試！")
         return
@@ -532,51 +672,86 @@ def render_mode_2_dashboard(engine):
     total_waste_hkd = df_db["cost_waste_hkd"].sum()
     total_co2 = df_db["co2_emission_kg"].sum()
 
+    # SaaS KPI Grid
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("歷史累計盤數", f"{total_scans} 盤")
-    k2.metric("全港平均殘食率", f"{avg_waste:.1f} %")
-    k3.metric("累計食材損耗成本", f"HK$ {total_waste_hkd:,.1f}")
-    k4.metric("累計碳排當量", f"{total_co2:.2f} kg CO2e")
+    with k1:
+        st.markdown(f"""
+        <div class="saas-card">
+            <div class="saas-label">累計審計盤數</div>
+            <div class="saas-value">{total_scans} <span style="font-size: 0.9rem; color: #94A3B8;">TRAYS</span></div>
+            <div class="saas-sub">▲ 100% Real-time sync</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with k2:
+        st.markdown(f"""
+        <div class="saas-card">
+            <div class="saas-label">全港平均殘食率</div>
+            <div class="saas-value" style="color: {'#EF4444' if avg_waste > 25 else '#10B981'};">{avg_waste:.1f}%</div>
+            <div class="saas-sub">基準目標: &lt;15.0%</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with k3:
+        st.markdown(f"""
+        <div class="saas-card">
+            <div class="saas-label">食材損耗總額</div>
+            <div class="saas-value" style="color: #F59E0B;">HK${total_waste_hkd:,.1f}</div>
+            <div class="saas-sub">按米飯/主肉折算</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with k4:
+        st.markdown(f"""
+        <div class="saas-card">
+            <div class="saas-label">累計碳排放當量</div>
+            <div class="saas-value" style="color: #38BDF8;">{total_co2:.2f} <span style="font-size: 0.9rem; color: #94A3B8;">kg</span></div>
+            <div class="saas-sub">Scope 3 ESG Compliance</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     st.markdown("---")
-
-    st.markdown("### 🧭 大家樂總部營運建議指導中心 (Macro Advisory Hub)")
-    review_scope = st.radio("選擇覆盤維度 (Review Scope)", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
+    st.markdown("#### 🧭 大家樂總部營運指導中心 (Executive Advisory Hub)")
+    review_scope = st.radio("選擇覆盤維度", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
 
     if "日度" in review_scope:
         available_dates = df_db["audit_date"].dropna().unique().tolist()
         if not available_dates:
             available_dates = [datetime.date.today().strftime("%Y-%m-%d")]
-        selected_date = st.selectbox("選擇要覆盤的日期", available_dates)
+        selected_date = st.selectbox("選擇覆盤日期", available_dates)
         df_target = df_db[df_db["audit_date"] == selected_date]
         scope_code = "DAILY"
     else:
         available_months = df_db["audit_month"].dropna().unique().tolist()
         if not available_months:
             available_months = [datetime.date.today().strftime("%Y-%m")]
-        selected_month = st.selectbox("選擇要審計的月份", available_months)
+        selected_month = st.selectbox("選擇審計月份", available_months)
         df_target = df_db[df_db["audit_month"] == selected_month]
         scope_code = "MONTHLY"
 
-    if df_target.empty:
-        st.info("該時段內無資料。")
-    else:
+    if not df_target.empty:
         with st.spinner("AI 正在針對該時段聚合數據進行宏觀分析與決策生成..."):
             advisory = generate_macro_advisory(df_target, scope_code, engine)
 
-        col_adv_summary, col_adv_cards = st.columns([1, 2])
+        c_left, c_right = st.columns([1, 2])
+        with c_left:
+            st.markdown(f"""
+            <div class="saas-card">
+                <div class="saas-label">{review_scope.split(' ')[0]} 關鍵指標摘要</div>
+                <div style="margin-top: 10px; font-size: 0.9rem; color: #CBD5E1; line-height: 1.8;">
+                    • 樣本總數: <b>{advisory['total_trays']} 盤</b><br>
+                    • 該期殘食率: <b style="color: #F59E0B;">{advisory['avg_waste']:.1f}%</b><br>
+                    • 關注分店: <b>{advisory['worst_branch']}</b><br>
+                    • 耗損居首餐點: <b>{advisory['worst_dish']}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        with col_adv_summary:
-            st.markdown(f"#### 📌 {review_scope.split(' ')[0]} 關鍵指標")
-            st.metric("該期審計樣本數", f"{advisory['total_trays']} 盤")
-            st.metric("該期平均殘食率", f"{advisory['avg_waste']:.1f}%")
-            st.metric("最需關注分店", advisory["worst_branch"])
-            st.metric("剩餘最多菜品", advisory["worst_dish"])
-
-        with col_adv_cards:
-            st.markdown(f"#### 📋 具體下一步應對行動方針 ({review_scope.split(' ')[0]})")
+        with c_right:
             for item in advisory["action_items"]:
-                st.error(f"**{item['role']}**\n\n{item['directive']}")
+                st.markdown(f"""
+                <div class="directive-card {item['type']}">
+                    <div class="directive-title">{item['role']}</div>
+                    <div class="directive-body">{item['directive']}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
             with st.expander("📝 檢視 AI 總監決策備忘錄 (Executive Memo)", expanded=True):
                 st.write(advisory["executive_memo"])
@@ -584,43 +759,35 @@ def render_mode_2_dashboard(engine):
     st.markdown("---")
     col_c1, col_c2 = st.columns([1, 1])
     with col_c1:
-        st.markdown("#### 🏢 各分店真實平均殘食率 (%)")
+        st.markdown("##### 🏢 各分店真實平均殘食率 (%)")
         branch_stat = df_db.groupby("branch_name")["waste_ratio"].mean().reset_index()
-        st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#FF4B4B")
+        st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#F59E0B")
 
     with col_c2:
-        st.markdown("#### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
+        st.markdown("##### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
         level_stat = df_db.groupby("branch_level")["cost_waste_hkd"].sum().reset_index()
-        st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd")
+        st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd", color="#EF4444")
 
-    st.markdown("### 📋 歷史審計流水表 (SQLite 完整記錄)")
+    st.markdown("##### 📋 SQLite 歷史審計流水表")
     st.dataframe(df_db, use_container_width=True)
 
     csv_data = df_db.to_csv(index=False).encode("utf-8")
     st.download_button(
-        label="📥 匯出當前審計數據為 CSV",
+        label="📥 匯出審計數據為 CSV",
         data=csv_data,
         file_name=f"cafedecoral_audit_{datetime.date.today()}.csv",
         mime="text/csv"
     )
 
 def render_mode_3_master_data(df_branches, df_dishes):
-    st.subheader("⚙️ Mode 3: 基礎資料管理 (分店清單 & 餐點品項 CSV 上傳)")
-    st.caption("在此維護分店清單與餐點清單。支援上傳 CSV 批量更新、下載範本，或直接在網頁表格中手動修改。")
-
-    tab_branch_mgt, tab_dish_mgt = st.tabs(["🏢 分店清單管理 (Branch List)", "🍱 餐點品項管理 (Dish List)"])
+    st.markdown("### ⚙️ 基礎資料管理 (Master Data Management)")
+    tab_branch_mgt, tab_dish_mgt = st.tabs(["🏢 分店清單 (Branches)", "🍱 餐點品項 (Dishes)"])
 
     with tab_branch_mgt:
-        st.markdown("#### 1. 上傳分店 CSV 檔案 (Batch Upload)")
         col_b_up, col_b_dl = st.columns([2, 1])
         with col_b_dl:
             sample_branch_csv = pd.DataFrame(DEFAULT_BRANCHES).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 下載分店 CSV 格式範本",
-                data=sample_branch_csv,
-                file_name="branches_template.csv",
-                mime="text/csv"
-            )
+            st.download_button(label="📥 下載分店 CSV 格式範本", data=sample_branch_csv, file_name="branches_template.csv", mime="text/csv")
         with col_b_up:
             branch_upload = st.file_uploader("選擇分店 CSV 進行上傳覆蓋", type=["csv"], key="branch_uploader")
             if branch_upload is not None:
@@ -636,7 +803,6 @@ def render_mode_3_master_data(df_branches, df_dishes):
                 except Exception as e:
                     st.error(f"❌ 讀取失敗: {e}")
 
-        st.markdown("#### 2. 線上手動檢視與直接編輯 (Live Data Editor)")
         edited_branches = st.data_editor(df_branches, num_rows="dynamic", use_container_width=True, key="branch_editor")
         if st.button("💾 儲存分店手動修改內容", type="primary"):
             edited_branches.to_csv(BRANCH_FILE, index=False)
@@ -644,16 +810,10 @@ def render_mode_3_master_data(df_branches, df_dishes):
             st.rerun()
 
     with tab_dish_mgt:
-        st.markdown("#### 1. 上傳餐點品項 CSV 檔案 (Batch Upload)")
         col_d_up, col_d_dl = st.columns([2, 1])
         with col_d_dl:
             sample_dish_csv = pd.DataFrame(DEFAULT_DISHES).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 下載餐點 CSV 格式範本",
-                data=sample_dish_csv,
-                file_name="dishes_template.csv",
-                mime="text/csv"
-            )
+            st.download_button(label="📥 下載餐點 CSV 格式範本", data=sample_dish_csv, file_name="dishes_template.csv", mime="text/csv")
         with col_d_up:
             dish_upload = st.file_uploader("選擇餐點 CSV 進行上傳覆蓋", type=["csv"], key="dish_uploader")
             if dish_upload is not None:
@@ -669,7 +829,6 @@ def render_mode_3_master_data(df_branches, df_dishes):
                 except Exception as e:
                     st.error(f"❌ 讀取失敗: {e}")
 
-        st.markdown("#### 2. 線上手動檢視與直接編輯 (Live Data Editor)")
         edited_dishes = st.data_editor(df_dishes, num_rows="dynamic", use_container_width=True, key="dish_editor")
         if st.button("💾 儲存餐點手動修改內容", type="primary"):
             edited_dishes.to_csv(DISH_FILE, index=False)
@@ -677,15 +836,17 @@ def render_mode_3_master_data(df_branches, df_dishes):
             st.rerun()
 
 # ==============================================================================
-# 5. 主程序入口
+# 6. 主程序入口
 # ==============================================================================
 def main():
     st.set_page_config(
-        page_title="大家樂 (Café de Coral) 智能餐盤殘食審計系統",
+        page_title="PlateMetrics AI | 大家樂餐盤審計大盤",
         page_icon="🍽️",
         layout="wide",
         initial_sidebar_state="expanded"
     )
+
+    inject_custom_css()
 
     if "latest_result" not in st.session_state:
         st.session_state["latest_result"] = None
@@ -699,34 +860,30 @@ def main():
     with st.spinner("🚀 正在啟動 AI 模型引擎 (YOLOS + Flan-T5)..."):
         engine = init_ai_pipeline_engine()
 
-    st.title("🍽️ 大家樂 (Café de Coral) 智能餐盤殘食審計與中央調配系統")
-    st.markdown(
-        "**ISOM5240 Group Project** | 雙 Pipeline 深度學習架構: "
-        "`YOLOS-tiny (Object Detection)` $\\rightarrow$ `Flan-T5 (Context Decision Engine)`"
-    )
+    render_header()
 
-    st.sidebar.title("🎛️ 系統模式選擇")
+    st.sidebar.title("🎛️ 系統控制台")
     selected_mode = st.sidebar.radio(
-        "切換工作模式",
+        "工作模式",
         [
-            "Mode 1: 前線餐盤智能偵測 (Tray Detection)", 
-            "Mode 2: 總部即時營運大盤 (Real-time Dashboard)",
-            "Mode 3: 基礎資料設定與上傳 (Master Data Management)"
+            "Mode 1: 前線餐盤智能偵測 (Tray Station)", 
+            "Mode 2: 總部即時營運大盤 (HQ Dashboard)",
+            "Mode 3: 基礎資料設定 (Master Data)"
         ],
         index=0
     )
     st.sidebar.markdown("---")
-    st.sidebar.subheader("⚙️ 測試管理工具")
-    if st.sidebar.button("🗑️ 清空所有審計記錄 (Reset DB)", type="secondary"):
+    st.sidebar.subheader("⚙️ 測試維護")
+    if st.sidebar.button("🗑️ 清空審計資料庫 (Reset DB)", type="secondary"):
         truncate_audit_db()
         st.session_state["latest_result"] = None
         st.session_state["last_scanned_hash"] = None
-        st.sidebar.success("✅ 資料庫與快取已清空！")
+        st.sidebar.success("✅ 資料庫已完全清空！")
         st.rerun()
 
-    if selected_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
+    if selected_mode == "Mode 1: 前線餐盤智能偵測 (Tray Station)":
         render_mode_1_detection(df_branches, df_dishes, engine)
-    elif selected_mode == "Mode 2: 總部即時營運大盤 (Real-time Dashboard)":
+    elif selected_mode == "Mode 2: 總部即時營運大盤 (HQ Dashboard)":
         render_mode_2_dashboard(engine)
     else:
         render_mode_3_master_data(df_branches, df_dishes)
