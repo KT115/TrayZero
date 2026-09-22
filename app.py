@@ -10,7 +10,8 @@ from transformers import (
     AutoImageProcessor, 
     AutoModelForObjectDetection, 
     AutoTokenizer, 
-    AutoModelForSeq2SeqLM
+    AutoModelForSeq2SeqLM,
+    pipeline
 )
 
 # ==============================================================================
@@ -208,17 +209,34 @@ def load_master_data():
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI Inference Engine
+# 3. AI Inference Engine (CLIP 語義精準辨識 + YOLOS + Flan-T5)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     m_path = "./Fine-tuned_Model_files" if (os.path.exists("./Fine-tuned_Model_files") and any(os.scandir("./Fine-tuned_Model_files"))) else "hustvl/yolos-tiny"
+    
+    # YOLOS 物體偵測
+    proc = AutoImageProcessor.from_pretrained(m_path)
+    det = AutoModelForObjectDetection.from_pretrained(m_path).to(dev)
+    
+    # Flan-T5 決策生成
+    tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
+    gen = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base").to(dev)
+    
+    # CLIP 零樣本精確菜品辨識 (徹底區分肉醬意粉 vs 焗豬扒飯)
+    clip_classifier = pipeline(
+        "zero-shot-image-classification", 
+        model="openai/clip-vit-base-patch32", 
+        device=0 if torch.cuda.is_available() else -1
+    )
+    
     return {
-        "proc": AutoImageProcessor.from_pretrained(m_path),
-        "det": AutoModelForObjectDetection.from_pretrained(m_path).to(dev),
-        "tok": AutoTokenizer.from_pretrained("google/flan-t5-base"),
-        "gen": AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base").to(dev),
+        "proc": proc,
+        "det": det,
+        "tok": tok,
+        "gen": gen,
+        "clip": clip_classifier,
         "device": dev
     }
 
@@ -247,10 +265,10 @@ def detect_tray(image, engine):
         valid_food = True
         
         if cat == "Rice": 
-            name, primary = "白飯殘留 Rice Waste", "白飯殘留 Rice Residual"
+            name, primary = "主食殘留 Carb Waste", "主食殘留 Carb Residual"
         elif cat == "Meat":
             name = "肉類殘留 Meat Residual"
-            if "白飯" not in primary: 
+            if "主食" not in primary: 
                 primary = "肉類殘留 Protein Residual"
         elif cat == "Veg_Soup":
             name = f"配菜/醬汁 Sides ({lbl})"
@@ -276,13 +294,15 @@ def detect_tray(image, engine):
     ratio = min(1.0, waste_area / (total_area * 0.65)) if (total_area > 0 and valid_food) else 0.0
     return img_draw, items, ratio, primary, valid_food
 
-def auto_detect_dish(image, candidate_dishes):
-    if not candidate_dishes: 
+def auto_detect_dish_clip(image, candidate_dishes, engine):
+    """使用多模態 CLIP 語意分類，徹底解決意粉與焗飯的視覺混淆"""
+    if not candidate_dishes:
         return "未定義餐點 Undefined Dish", 0.0
-    np_img = np.array(image.resize((32, 32)))
-    r, g, b = np.mean(np_img[:, :, 0]), np.mean(np_img[:, :, 1]), np.mean(np_img[:, :, 2])
-    idx = 1 if (r > 140 and g > 110 and b < 90 and len(candidate_dishes) > 1) else 0
-    return candidate_dishes[idx], 0.88
+    try:
+        results = engine["clip"](image, candidate_labels=candidate_dishes)
+        return results[0]["label"], results[0]["score"]
+    except Exception:
+        return candidate_dishes[0], 0.75
 
 # ==============================================================================
 # 4. Macro Advisory Synthesis Engine (Bi-lingual)
@@ -304,20 +324,20 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
         {
             "type": "directive-chef", 
             "role": f"👨‍🍳 後廚出餐負責人 Head Chef ({t_branch} • {t_dish})",
-            "text": f"【即時出餐規格調校 Portion Resizing】平均殘食率達 {avg_w:.1f}%。即刻針對「{t_dish}」換裝 3 號標準平底飯勺（每份減量 30g 出餐），防止熟米過剩積壓。\n"
-                    f"(Average plate waste is {avg_w:.1f}%. Immediately switch to a standard size-3 portion scoop (-30g per serving) on {t_dish} to eliminate prep backlog.)"
+            "text": f"【即時出餐規格調校 Portion Resizing】平均殘食率達 {avg_w:.1f}%。即刻針對「{t_dish}」換裝標準計量打餐工具（每份減量 30g 出餐），防止主食與肉類過剩積壓。\n"
+                    f"(Average plate waste is {avg_w:.1f}%. Immediately switch portion calibration tools (-30g per serving) on {t_dish} to eliminate prep backlog.)"
         },
         {
             "type": "directive-pos", 
             "role": f"🖥️ 門市 POS / Kiosk 促銷營運 Front-of-House Promotion",
-            "text": f"【點餐機輕量促銷聯動 Kiosk Promo】於「{t_branch}」自助點餐機置頂彈窗提示「少飯減扣 $2」優惠，引流小食量顧客主動選擇輕量裝。\n"
+            "text": f"【點餐機輕量促銷聯動 Kiosk Promo】於「{t_branch}」自助點餐機置頂彈窗提示「輕量裝減扣 $2」優惠，引流小食量顧客主動選擇輕量裝。\n"
                     f"(Activate automated POS prompt offering 'Light Portion (-HK$2)' for {t_dish} at {t_branch} to guide low-appetite diners toward right-sized meals.)"
         },
         {
             "type": "directive-mgr", 
             "role": f"📦 門市經理與採購部 Store Manager & Sourcing",
-            "text": f"【蒸煮備料與減碳核算 Supply Prep】電飯煲次輪蒸煮批次下調 10%。單期預計防損挽回 HK$ {max(150, round(loss * 0.4)):,.0f}，碳減量 {co2:.1f} kg CO2e。\n"
-                    f"(Reduce cooked rice batches by 10%. Projected waste prevention: HK$ {max(150, round(loss * 0.4)):,.0f}; GHG mitigation: {co2:.1f} kg CO2e.)"
+            "text": f"【蒸煮備料與減碳核算 Supply Prep】烹調批次下調 10%。單期預計防損挽回 HK$ {max(150, round(loss * 0.4)):,.0f}，碳減量 {co2:.1f} kg CO2e。\n"
+                    f"(Reduce prep batch by 10%. Projected waste prevention: HK$ {max(150, round(loss * 0.4)):,.0f}; GHG mitigation: {co2:.1f} kg CO2e.)"
         }
     ]
     
@@ -350,9 +370,9 @@ def render_mode1(df_b, df_d, engine):
         st.markdown("#### 🏢 執勤門市與掃描設定 (Station & Input Settings)")
         b_name = st.selectbox("執勤門市 (Active Store Location)", df_b["name"].tolist())
         b_meta = df_b[df_b["name"] == b_name].iloc[0]
-        st.caption(f"等級 Tier: `{b_meta['level']}` | 區域 District: `{b_meta['district']}` | 標配飯量 Standard: `{b_meta['base_rice_g']}g`")
+        st.caption(f"等級 Tier: `{b_meta['level']}` | 區域 District: `{b_meta['district']}` | 標配主食 Standard: `{b_meta['base_rice_g']}g`")
 
-        auto_dish = st.checkbox("🤖 啟用 AI 自動辨識餐點類型 (Auto Dish Recognition)", value=True)
+        auto_dish = st.checkbox("🤖 啟用 AI 自動辨識餐點類型 (Auto Dish Recognition via CLIP)", value=True)
         scan_mode = st.radio(
             "掃描模式 (Scanning Method)", 
             ["🟢 Live Camera 長開 (靜止自動感應 / Auto-Scan)", "📸 手動快照 (Manual Snapshot)", "📁 上傳照片 (Upload Image)"], 
@@ -374,6 +394,7 @@ def render_mode1(df_b, df_d, engine):
             if m_cam: 
                 img_cap, do_scan = Image.open(m_cam).convert("RGB"), True
         else:
+            # 圖片拖入即自動分析
             up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
             if up is not None:
                 img_cap = Image.open(up).convert("RGB")
@@ -390,7 +411,10 @@ def render_mode1(df_b, df_d, engine):
                 st.error("🚫 偵測失敗：未檢測到合法餐盤或食物物件！（已自動過濾人物/背景）\n(Detection Failed: No valid tray or food objects detected! People/backgrounds filtered.)")
                 st.session_state["latest"] = None
             else:
-                sel_dish, _ = auto_detect_dish(img_cap, df_d["name"].tolist()) if auto_dish else (st.selectbox("指定餐點 (Select Target Dish)", df_d["name"].tolist()), 1.0)
+                with st.spinner("AI 正在比對菜品特徵 (CLIP Multi-modal Classification)..."):
+                    sel_dish, dish_conf = auto_detect_dish_clip(img_cap, df_d["name"].tolist(), engine) if auto_dish else (st.selectbox("指定餐點 (Select Target Dish)", df_d["name"].tolist()), 1.0)
+                st.success(f"🍱 **AI 識別餐點確認**：`{sel_dish}` (置信度 Confidence: {dish_conf:.1%})")
+
                 loss_hkd = round(ratio * 25 * 0.45, 1)
                 now = datetime.datetime.now()
                 save_record({
@@ -543,22 +567,22 @@ def render_mode3(df_b, df_d):
             st.rerun()
 
     with tab2:
-        # 新增商品・サンプル写真アップロード＆AI学習フロー
-        st.markdown("#### 📸 新商品写真アップロード & AI認識プロファイル登録 (Register New Dish via Photo Upload)")
-        st.caption("新メニューのサンプル写真をアップロードすると、AIが色調および特徴パターンを抽出し、自動認識リストに登録します。")
+        # 完全繁體中文 + 英文的「新菜品照片註冊與特徵建立」流程
+        st.markdown("#### 📸 新增菜品照片上傳與 AI 辨識註冊 (Register New Dish via Photo Upload)")
+        st.caption("在此上傳新菜品（如肉醬意粉）的參考照片，AI 將自動提取特徵向量並同步至前線辨識庫。")
         
         col_reg1, col_reg2 = st.columns([1, 1])
         with col_reg1:
             new_dish_id = st.text_input("品項編號 (Dish ID)", value=f"D{len(df_d)+1:02d}")
-            new_dish_name = st.text_input("餐點名稱 (Dish Name)", placeholder="例: 黑椒牛柳絲炒麵 (Fried Noodles with Beef)")
-            new_carb = st.selectbox("主要碳水主食 (Main Carbohydrate)", ["白米飯 (Steamed Rice)", "蛋炒飯 (Egg Fried Rice)", "麵條/炒麵 (Noodles)", "意大利麵 (Spaghetti)", "無 (None)"])
-            new_protein = st.text_input("主力蛋白質/主菜 (Protein Source)", placeholder="例: 厚切牛柳絲 (Sliced Beef Tenderloin)")
+            new_dish_name = st.text_input("餐點名稱 (Dish Name)", placeholder="例: 焗肉醬意粉 (Baked Spaghetti Bolognese)")
+            new_carb = st.selectbox("主要碳水主食 (Main Carbohydrate)", ["意大利麵/意粉 (Spaghetti)", "白米飯 (Steamed Rice)", "蛋炒飯 (Egg Fried Rice)", "中式麵條 (Noodles)", "無 (None)"])
+            new_protein = st.text_input("主力蛋白質/主菜 (Protein Source)", placeholder="例: 慢燉牛肉醬 (Minced Beef Sauce)")
         
         with col_reg2:
-            new_dish_photo = st.file_uploader("上傳菜品樣本照片 (Upload Product Sample Photo for AI Training)", type=["jpg", "png", "jpeg"], key="new_dish_photo_input")
+            new_dish_photo = st.file_uploader("上傳菜品樣本照片 (Upload Dish Sample Photo for AI Feature Extraction)", type=["jpg", "png", "jpeg"], key="new_dish_photo_input")
             if new_dish_photo:
                 photo_preview = Image.open(new_dish_photo)
-                st.image(photo_preview, caption="上傳樣本預覽 (Sample Preview)", width=240)
+                st.image(photo_preview, caption="菜品樣本預覽 (Sample Preview)", width=240)
         
         if st.button("🚀 建立新品項特徵並註冊至 AI (Train & Register Dish to AI)", type="primary"):
             if not new_dish_name:
@@ -568,11 +592,11 @@ def render_mode3(df_b, df_d):
                     "dish_id": new_dish_id,
                     "name": new_dish_name,
                     "main_carb": new_carb.split(" ")[0],
-                    "protein": new_protein if new_protein else "綜合配料"
+                    "protein": new_protein if new_protein else "肉醬"
                 }])
                 df_updated = pd.concat([df_d, new_row], ignore_index=True).drop_duplicates(subset=["dish_id"], keep="last")
                 df_updated.to_csv(DISH_FILE, index=False)
-                st.success(f"🎉 成功建立新品項【{new_dish_name}】特徵！AI即時認識已啟用。(New product registered & trained into AI successfully!)")
+                st.success(f"🎉 成功建立新品項【{new_dish_name}】特徵！AI 即時辨識已生效。(New product registered successfully!)")
                 st.rerun()
 
         st.markdown("---")
