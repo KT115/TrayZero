@@ -2,6 +2,7 @@ import os
 import time
 import datetime
 import sqlite3
+import base64
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -75,35 +76,49 @@ FOOD_AND_TRAY_WHITELIST = {
     "dining table": "Tray"
 }
 
+# 大家樂官方 Logo (Base64 編碼，絕不死圖)
+CDC_LOGO_BASE64 = (
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 500 220'>"
+    "<rect width='500' height='220' rx='110' fill='%23F59E0B'/>"
+    "<rect x='15' y='15' width='470' height='190' rx='95' fill='%23FFFFFF'/>"
+    "<rect x='28' y='28' width='444' height='164' rx='82' fill='%23F59E0B'/>"
+    "<rect x='44' y='44' width='412' height='132' rx='66' fill='%23FFFFFF'/>"
+    "<text x='50%25' y='58%25' dominant-baseline='middle' text-anchor='middle' "
+    "fill='%23EA580C' font-family='sans-serif' font-weight='900' font-size='68'>大家樂</text>"
+    "<text x='50%25' y='82%25' dominant-baseline='middle' text-anchor='middle' "
+    "fill='%23EA580C' font-family='sans-serif' font-weight='800' font-size='20' letter-spacing='3'>CAFÉ DE CORAL</text>"
+    "</svg>"
+)
+
 # ==============================================================================
-# 1. 樣式注入：高對比度、乾淨現代排版
+# 1. 樣式注入：精緻企業級 Dark SaaS UI
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Noto+Sans+TC:wght@500;700;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800;900&family=Noto+Sans+TC:wght@500;700;900&display=swap');
         
         html, body, [class*="css"] {
             font-family: 'Plus Jakarta Sans', 'Noto Sans TC', sans-serif;
         }
 
-        /* 頂部單行標題容器：高清晰度、深色粗體字 */
-        .single-line-header {
-            background: linear-gradient(90deg, #FFF7ED 0%, #FFFFFF 100%);
-            border: 1.5px solid #FDBA74;
-            border-left: 6px solid #EA580C;
+        /* 頂部單行大氣深色標題 */
+        .trayzero-header {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            border-left: 6px solid #F59E0B;
             border-radius: 14px;
-            padding: 16px 24px;
-            margin-bottom: 24px;
-            box-shadow: 0 4px 16px rgba(234, 88, 12, 0.08);
+            padding: 18px 24px;
+            margin-bottom: 22px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
             display: flex;
             align-items: center;
         }
         
-        .header-title-text {
-            color: #0F172A !important;
-            font-size: 1.6rem !important;
-            font-weight: 900 !important;
+        .trayzero-title-text {
+            color: #F8FAFC !important;
+            font-size: 1.35rem !important;
+            font-weight: 800 !important;
             letter-spacing: -0.01em;
             margin: 0 !important;
             white-space: nowrap !important;
@@ -111,36 +126,36 @@ def inject_custom_css():
             text-overflow: ellipsis;
         }
 
-        /* SaaS KPI 指標卡片 (深色/白色自適應高對比度) */
+        /* 企業級 SaaS KPI 指標卡片 */
         .saas-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
+            background: #1E293B;
+            border: 1px solid #334155;
             border-radius: 12px;
             padding: 16px 18px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
-            border-top: 3px solid #EA580C;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-top: 3px solid #F59E0B;
         }
 
         .saas-label {
-            font-size: 0.78rem;
+            font-size: 0.76rem;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #475569;
+            letter-spacing: 0.06em;
+            color: #94A3B8;
             font-weight: 700;
             margin-bottom: 6px;
         }
 
         .saas-value {
-            font-size: 1.85rem;
+            font-size: 1.8rem;
             font-weight: 900;
-            color: #0F172A;
+            color: #F8FAFC;
             line-height: 1.1;
         }
 
         .saas-sub {
             font-size: 0.8rem;
-            color: #059669;
+            color: #10B981;
             font-weight: 700;
             margin-top: 6px;
         }
@@ -151,30 +166,33 @@ def inject_custom_css():
             padding: 16px 18px;
             margin-bottom: 14px;
             border-left: 5px solid;
-            background: #F8FAFC;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            background: #1E293B;
+            border-top: 1px solid #334155;
+            border-right: 1px solid #334155;
+            border-bottom: 1px solid #334155;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
         }
-        .directive-chef { border-color: #DC2626; }
-        .directive-pos { border-color: #EA580C; }
-        .directive-mgr { border-color: #2563EB; }
+        .directive-chef { border-left-color: #EF4444; }
+        .directive-pos { border-left-color: #F59E0B; }
+        .directive-mgr { border-left-color: #3B82F6; }
 
         .directive-title {
             font-size: 0.92rem;
             font-weight: 800;
-            color: #0F172A;
+            color: #F8FAFC;
             margin-bottom: 6px;
         }
         .directive-body {
             font-size: 0.86rem;
-            color: #334155;
-            line-height: 1.55;
+            color: #CBD5E1;
+            line-height: 1.6;
             font-weight: 500;
         }
 
-        .sidebar-logo-container {
+        .sidebar-logo-box {
             text-align: center;
-            padding: 10px 0 16px 0;
-            border-bottom: 1px solid #E2E8F0;
+            padding: 8px 0 16px 0;
+            border-bottom: 1px solid #334155;
             margin-bottom: 16px;
         }
     </style>
@@ -307,7 +325,7 @@ def run_tray_waste_detection(image, engine, threshold=0.20):
     detected_items = []
     waste_box_area = 0
     
-    color_map = {"Rice": "#DC2626", "Meat": "#EA580C", "Veg_Soup": "#059669", "Tray": "#2563EB"}
+    color_map = {"Rice": "#EF4444", "Meat": "#F59E0B", "Veg_Soup": "#10B981", "Tray": "#3B82F6"}
     primary_category = "光盤 (Clean Plate)"
     valid_food_found = False
 
@@ -341,7 +359,7 @@ def run_tray_waste_detection(image, engine, threshold=0.20):
         if category != "Tray":
             waste_box_area += box_area
         
-        c = color_map.get(category, "#DC2626")
+        c = color_map.get(category, "#EF4444")
         draw.rectangle([xmin, ymin, xmax, ymax], outline=c, width=3)
         caption = f"{display_name} {score:.1%}"
         draw.rectangle([xmin, max(0, ymin - 18), xmin + len(caption) * 7.5, ymin], fill=c)
@@ -377,22 +395,22 @@ def auto_detect_dish_heuristic(image, candidate_dishes):
     return dish, conf
 
 # ==============================================================================
-# 4. 宏觀審計建議引擎 (日度與月度 Advisory)
+# 4. 宏觀審計建議引擎 (支援 Overall 與單店維度)
 # ==============================================================================
-def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dict) -> dict:
+def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, filter_branch: str, engine: dict) -> dict:
     if df_scope.empty:
         total_trays = 0
         avg_waste = 0.0
         total_loss_hkd = 0.0
         total_co2 = 0.0
-        worst_branch = "中環威靈頓街店"
+        worst_branch = filter_branch if filter_branch != "ALL" else "中環威靈頓街店"
         worst_dish = "一哥焗豬扒飯"
     else:
         total_trays = len(df_scope)
         avg_waste = df_scope["waste_ratio"].mean()
         total_loss_hkd = df_scope["cost_waste_hkd"].sum()
         total_co2 = df_scope["co2_emission_kg"].sum()
-        worst_branch = df_scope.groupby("branch_name")["waste_ratio"].mean().idxmax()
+        worst_branch = filter_branch if filter_branch != "ALL" else df_scope.groupby("branch_name")["waste_ratio"].mean().idxmax()
         worst_dish = df_scope.groupby("dish_name")["waste_ratio"].mean().idxmax()
     
     advisory = {
@@ -407,16 +425,18 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
         "executive_memo": ""
     }
 
+    scope_name = "全港集團總部" if filter_branch == "ALL" else f"【{filter_branch}】"
+
     if scope_type == "DAILY":
         advisory["action_items"].append({
             "type": "directive-chef",
-            "role": "👨‍🍳 後廚出餐負責人 (Kitchen Line SOP)",
+            "role": f"👨‍🍳 後廚出餐負責人 ({scope_name} Kitchen SOP)",
             "directive": f"【即時出餐規格調校】全日平均殘食率達 {avg_waste:.1f}%，重點監控「{worst_dish}」。明日午市起針對商業區門市全面換裝 3 號平底飯勺（每份減量 30g 出餐），嚴控熟米積壓。"
         })
         advisory["action_items"].append({
             "type": "directive-pos",
             "role": "🖥️ 門市 POS / Kiosk 運營",
-            "directive": f"【點餐機促銷聯動】明日於「{worst_branch}」點餐機全面置頂彈窗提示「少飯減扣 $2」優惠，引流小食量白領選用輕量裝。"
+            "directive": f"【點餐機促銷聯動】明日於「{worst_branch}」點餐機全面置頂彈窗提示「少飯減扣 $2」優惠，引流小食量顧客選用輕量裝。"
         })
         advisory["action_items"].append({
             "type": "directive-mgr",
@@ -425,9 +445,9 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
         })
 
         prompt = (
-            f"You are the operations head of Cafe de Coral. Review today's audit: "
+            f"You are the operations head of Cafe de Coral. Scope: {scope_name}. "
             f"{total_trays} trays audited, average food waste ratio {avg_waste:.1f}%, total loss HK${total_loss_hkd:.1f}. "
-            f"Worst performing branch: {worst_branch}, highest waste dish: {worst_dish}. "
+            f"Target branch: {worst_branch}, highest waste dish: {worst_dish}. "
             f"Write a 2-sentence direct operational instruction for tomorrow's store managers."
         )
     else:
@@ -440,16 +460,16 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
         advisory["action_items"].append({
             "type": "directive-pos",
             "role": "🏢 總部營運與菜單工程部",
-            "directive": f"【門市分級差異化定價】數據印證 Level A (商業區) 白領控醣需求顯著。下月起於商業區門市正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率提升 1.8%。"
+            "directive": f"【門市分級差異化定價】針對 {scope_name} 客群需求，下月正式推行「輕量少飯版菜單」，客單價微降 $1，毛利率提升 1.8%。"
         })
         advisory["action_items"].append({
             "type": "directive-mgr",
             "role": "🌱 集團 ESG 與永續發展委員會",
-            "directive": f"【年化碳減量與防損核算】本月累計減廢預計年化防損達 HK$ {monthly_saving:,.0f}，月減碳 {total_co2:.1f} kg CO2e，數據已自動同步至年度可持續發展報告 (ESG Report)。"
+            "directive": f"【年化碳減量與防損核算】本期累計減廢預計年化防損達 HK$ {monthly_saving:,.0f}，月減碳 {total_co2:.1f} kg CO2e，數據已自動同步至年度可持續發展報告 (ESG Report)。"
         })
 
         prompt = (
-            f"You are the Group CEO of Cafe de Coral Holdings. Review this month's food waste report: "
+            f"You are the Group CEO of Cafe de Coral Holdings. Scope: {scope_name}. "
             f"{total_trays} audits, total loss HK${total_loss_hkd:.1f}, average waste {avg_waste:.1f}%. "
             f"Write an executive board-level strategic comment on supply chain and portion resizing."
         )
@@ -460,7 +480,7 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
             outputs = engine["generator"].generate(**inputs, max_new_tokens=80, do_sample=False)
         advisory["executive_memo"] = engine["tokenizer"].decode(outputs[0], skip_special_tokens=True)
     except Exception:
-        advisory["executive_memo"] = f"大家樂營運總部核准：落實 {scope_type} 殘食校準方針，精準優化各門市與中央廚房配給量。"
+        advisory["executive_memo"] = f"大家樂營運總部核准：落實 {scope_name} {scope_type} 殘食校準方針，精準優化門市與中央廚房配給量。"
 
     return advisory
 
@@ -468,10 +488,9 @@ def generate_macro_advisory(df_scope: pd.DataFrame, scope_type: str, engine: dic
 # 5. UI 渲染控制
 # ==============================================================================
 def render_header():
-    # 單行清晰標題，已完全移除所有徽章與第二行
     st.markdown("""
-    <div class="single-line-header">
-        <h2 class="header-title-text">🍽️ PlateMetrics AI 智能餐盤殘食審計與中央調配系統</h2>
+    <div class="trayzero-header">
+        <h2 class="trayzero-title-text">🍽️ TrayZero Intelligent plate waste auditing and central distribution system</h2>
     </div>
     """, unsafe_allow_html=True)
 
@@ -527,7 +546,7 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 if st.button("🚀 執行上傳相片偵測", type="primary"):
                     should_run_detection = True
 
-        # 門禁檢查
+        # 門禁檢查與推論
         if captured_image and should_run_detection:
             with st.spinner("AI 偵測中: YOLOS 正在過濾非餐盤目標並辨識殘食..."):
                 annotated_img, item_list, waste_ratio, primary_cat, valid_food_found = run_tray_waste_detection(captured_image, engine)
@@ -593,9 +612,9 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
         latest = st.session_state.get("latest_result")
 
         if not latest:
-            placeholder_img = Image.new("RGB", (400, 260), color=(241, 245, 249))
+            placeholder_img = Image.new("RGB", (400, 260), color=(15, 23, 42))
             d = ImageDraw.Draw(placeholder_img)
-            d.text((120, 120), "WAITING FOR TRAY INPUT...", fill=(100, 116, 139))
+            d.text((120, 120), "WAITING FOR TRAY INPUT...", fill=(148, 163, 184))
             st.image(placeholder_img, caption="即時監控看板", use_container_width=True)
         else:
             st.image(latest["image"], caption=f"審計影像: {latest['dish_name']} ({latest['timestamp']})", use_container_width=True)
@@ -605,7 +624,7 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 st.markdown(f"""
                 <div class="saas-card">
                     <div class="saas-label">殘食佔比</div>
-                    <div class="saas-value" style="color: {'#DC2626' if latest['waste_ratio'] > 0.3 else '#059669'};">
+                    <div class="saas-value" style="color: {'#EF4444' if latest['waste_ratio'] > 0.3 else '#10B981'};">
                         {latest['waste_ratio']:.1%}
                     </div>
                 </div>
@@ -623,7 +642,7 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 st.markdown(f"""
                 <div class="saas-card">
                     <div class="saas-label">推算損耗</div>
-                    <div class="saas-value" style="color: #EA580C;">
+                    <div class="saas-value" style="color: #F59E0B;">
                         HK${latest['cost']}
                     </div>
                 </div>
@@ -638,10 +657,36 @@ def render_mode_1_detection(df_branches, df_dishes, engine):
                 with st.expander("查看 Bounding Box 偵測物件明細", expanded=True):
                     st.dataframe(pd.DataFrame(latest["item_list"]), use_container_width=True)
 
-def render_mode_2_dashboard(engine):
+def render_mode_2_dashboard(df_branches, engine):
     st.markdown("### 📊 大家樂集團總部：全港即時營運大盤 & 戰略建議")
-    df_db = get_all_audit_records()
+    df_raw = get_all_audit_records()
+
+    # --------------------------------------------------------------------------
+    # 核心新增 Dimension 選擇：Overall vs 單店
+    # --------------------------------------------------------------------------
+    st.markdown("#### 🏢 審計檢視維度 (Dimension Scope)")
+    c_dim1, c_dim2 = st.columns([1, 1])
     
+    with c_dim1:
+        dimension_mode = st.radio(
+            "切換視角", 
+            ["🌐 Overall 全港總部大盤 (集團彙總)", "🏪 單店深度透視 (Branch Deep-Dive)"],
+            horizontal=True
+        )
+
+    selected_branch_filter = "ALL"
+    if "單店" in dimension_mode:
+        with c_dim2:
+            all_branch_names = df_branches["name"].tolist()
+            selected_branch_filter = st.selectbox("選擇指定審計分店", all_branch_names)
+            st.info(f"🔎 目前數據已過濾為：**{selected_branch_filter}** 專屬分析")
+
+    # 依照維度過濾資料庫
+    if not df_raw.empty and selected_branch_filter != "ALL":
+        df_db = df_raw[df_raw["branch_name"] == selected_branch_filter]
+    else:
+        df_db = df_raw
+
     # 頂部 KPI 卡片
     total_scans = len(df_db) if not df_db.empty else 0
     avg_waste = df_db["waste_ratio"].mean() if not df_db.empty else 0.0
@@ -653,15 +698,15 @@ def render_mode_2_dashboard(engine):
         st.markdown(f"""
         <div class="saas-card">
             <div class="saas-label">累計審計盤數</div>
-            <div class="saas-value">{total_scans} <span style="font-size: 0.9rem; color: #64748B;">TRAYS</span></div>
+            <div class="saas-value">{total_scans} <span style="font-size: 0.9rem; color: #94A3B8;">TRAYS</span></div>
             <div class="saas-sub">▲ 100% Real-time sync</div>
         </div>
         """, unsafe_allow_html=True)
     with k2:
         st.markdown(f"""
         <div class="saas-card">
-            <div class="saas-label">全港平均殘食率</div>
-            <div class="saas-value" style="color: {'#DC2626' if avg_waste > 25 else '#059669'};">{avg_waste:.1f}%</div>
+            <div class="saas-label">平均殘食率</div>
+            <div class="saas-value" style="color: {'#EF4444' if avg_waste > 25 else '#10B981'};">{avg_waste:.1f}%</div>
             <div class="saas-sub">基準目標: &lt;15.0%</div>
         </div>
         """, unsafe_allow_html=True)
@@ -669,24 +714,24 @@ def render_mode_2_dashboard(engine):
         st.markdown(f"""
         <div class="saas-card">
             <div class="saas-label">食材損耗總額</div>
-            <div class="saas-value" style="color: #EA580C;">HK${total_waste_hkd:,.1f}</div>
-            <div class="saas-sub">即時動態核算</div>
+            <div class="saas-value" style="color: #F59E0B;">HK${total_waste_hkd:,.1f}</div>
+            <div class="saas-sub">即時動態折算</div>
         </div>
         """, unsafe_allow_html=True)
     with k4:
         st.markdown(f"""
         <div class="saas-card">
             <div class="saas-label">累計碳排放當量</div>
-            <div class="saas-value" style="color: #0284C7;">{total_co2:.2f} <span style="font-size: 0.9rem; color: #64748B;">kg</span></div>
+            <div class="saas-value" style="color: #38BDF8;">{total_co2:.2f} <span style="font-size: 0.9rem; color: #94A3B8;">kg</span></div>
             <div class="saas-sub">Scope 3 ESG 披露</div>
         </div>
         """, unsafe_allow_html=True)
 
     st.markdown("---")
     
-    # 核心：無論是否滿一天，都保證 Advisory 永遠能看到並即時計算
+    # 營運指導中心 (Advisory Hub)
     st.markdown("#### 🧭 大家樂總部營運指導中心 (Executive Advisory Hub)")
-    review_scope = st.radio("選擇覆盤維度", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
+    review_scope = st.radio("選擇覆盤時限", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
 
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     this_month_str = datetime.date.today().strftime("%Y-%m")
@@ -699,7 +744,7 @@ def render_mode_2_dashboard(engine):
         else:
             available_dates = [today_str]
 
-        selected_date = st.selectbox("選擇覆盤日期 (即時聚合當天所有掃描數據)", available_dates)
+        selected_date = st.selectbox("選擇覆盤日期", available_dates)
         df_target = df_db[df_db["audit_date"] == selected_date] if not df_db.empty else pd.DataFrame()
         scope_code = "DAILY"
     else:
@@ -714,19 +759,18 @@ def render_mode_2_dashboard(engine):
         df_target = df_db[df_db["audit_month"] == selected_month] if not df_db.empty else pd.DataFrame()
         scope_code = "MONTHLY"
 
-    # 生成並展示 Advisory 指令（保證一定顯示）
-    with st.spinner("AI 正在針對該時段數據進行宏觀分析與決策生成..."):
-        advisory = generate_macro_advisory(df_target, scope_code, engine)
+    with st.spinner("AI 正在針對該時段與維度數據進行宏觀分析與決策生成..."):
+        advisory = generate_macro_advisory(df_target, scope_code, selected_branch_filter, engine)
 
     c_left, c_right = st.columns([1, 2])
     with c_left:
         st.markdown(f"""
         <div class="saas-card">
             <div class="saas-label">{review_scope.split(' ')[0]} 關鍵指標摘要</div>
-            <div style="margin-top: 10px; font-size: 0.95rem; color: #1E293B; line-height: 1.9;">
+            <div style="margin-top: 10px; font-size: 0.92rem; color: #CBD5E1; line-height: 1.9;">
                 • 當期審計樣本: <b>{advisory['total_trays']} 盤</b><br>
-                • 綜合殘食率: <b style="color: #EA580C;">{advisory['avg_waste']:.1f}%</b><br>
-                • 最需關注門市: <b>{advisory['worst_branch']}</b><br>
+                • 綜合殘食率: <b style="color: #F59E0B;">{advisory['avg_waste']:.1f}%</b><br>
+                • 目標分析對象: <b>{advisory['worst_branch']}</b><br>
                 • 耗損居首餐點: <b>{advisory['worst_dish']}</b>
             </div>
         </div>
@@ -748,27 +792,27 @@ def render_mode_2_dashboard(engine):
     if not df_db.empty:
         col_c1, col_c2 = st.columns([1, 1])
         with col_c1:
-            st.markdown("##### 🏢 各分店真實平均殘食率 (%)")
+            st.markdown("##### 🏢 真實平均殘食率 (%)")
             branch_stat = df_db.groupby("branch_name")["waste_ratio"].mean().reset_index()
-            st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#EA580C")
+            st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#F59E0B")
 
         with col_c2:
             st.markdown("##### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
             level_stat = df_db.groupby("branch_level")["cost_waste_hkd"].sum().reset_index()
-            st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd", color="#DC2626")
+            st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd", color="#EF4444")
 
         st.markdown("##### 📋 SQLite 歷史審計流水表")
         st.dataframe(df_db, use_container_width=True)
 
         csv_data = df_db.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 匯出審計數據為 CSV",
+            label="📥 匯出當前維度審計數據 (CSV)",
             data=csv_data,
-            file_name=f"cafedecoral_audit_{datetime.date.today()}.csv",
+            file_name=f"cafedecoral_{selected_branch_filter}_audit_{datetime.date.today()}.csv",
             mime="text/csv"
         )
     else:
-        st.info("💡 資料庫目前為空。請先在 Mode 1 執行幾次真實餐盤掃描，流水表記錄將在此即時匯聚！")
+        st.info("💡 目前維度尚無過盤紀錄。請先在 Mode 1 執行掃描測試！")
 
 def render_mode_3_master_data(df_branches, df_dishes):
     st.markdown("### ⚙️ 基礎資料管理 (Master Data Management)")
@@ -831,7 +875,7 @@ def render_mode_3_master_data(df_branches, df_dishes):
 # ==============================================================================
 def main():
     st.set_page_config(
-        page_title="PlateMetrics AI | 大家樂餐盤審計大盤",
+        page_title="TrayZero | 大家樂智能餐盤審計系統",
         page_icon="🍽️",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -853,12 +897,19 @@ def main():
 
     render_header()
 
-    # 側邊欄 Logo 與控制中心
-    st.sidebar.markdown("""
-    <div class="sidebar-logo-container">
-        <img src="https://upload.wikimedia.org/wikipedia/en/thumb/f/fa/Caf%C3%A9_de_Coral.svg/330px-Caf%C3%A9_de_Coral.svg.png" 
-             style="width: 140px; margin-bottom: 8px;" alt="Café de Coral Logo">
-        <div style="font-size: 0.75rem; color: #64748B; font-weight: 700; letter-spacing: 0.05em;">大家樂集團 • 智能審計系統</div>
+    # 側邊欄 Logo：優先讀取同目錄下的 CDC_810.jpg，若無則平滑使用內嵌 Base64，絕不死圖
+    local_logo_path = "./CDC_810.jpg"
+    if os.path.exists(local_logo_path):
+        with open(local_logo_path, "rb") as f:
+            encoded_img = base64.b64encode(f.read()).decode("utf-8")
+        logo_src = f"data:image/jpeg;base64,{encoded_img}"
+    else:
+        logo_src = CDC_LOGO_BASE64
+
+    st.sidebar.markdown(f"""
+    <div class="sidebar-logo-box">
+        <img src="{logo_src}" style="width: 170px; border-radius: 8px; margin-bottom: 6px;" alt="Café de Coral Logo">
+        <div style="font-size: 0.76rem; color: #94A3B8; font-weight: 700; letter-spacing: 0.05em;">大家樂集團 • 智能審計系統</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -884,7 +935,7 @@ def main():
     if selected_mode == "Mode 1: 前線餐盤智能偵測 (Tray Station)":
         render_mode_1_detection(df_branches, df_dishes, engine)
     elif selected_mode == "Mode 2: 總部即時營運大盤 (HQ Dashboard)":
-        render_mode_2_dashboard(engine)
+        render_mode_2_dashboard(df_branches, engine)
     else:
         render_mode_3_master_data(df_branches, df_dishes)
 
