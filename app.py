@@ -20,7 +20,7 @@ from transformers import (
 BRANCH_FILE = "master_branches.csv"
 DISH_FILE = "master_dishes.csv"
 DB_FILE = "trayzero_audit.db"
-LOGO_FILE = "CDC_810.jpg"
+LOGO_FILE = "CDC_810.png"
 
 DEFAULT_BRANCHES = [
     {
