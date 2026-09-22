@@ -23,7 +23,7 @@ DB_FILE = "trayzero_audit.db"
 LOGO_FILE = "CDC_810.png"
 
 FOOD_WHITELIST = {
-    "bowl": "Rice", "cake": "Rice", "sandwich": "Meat", "pizza": "Meat", "hot dog": "Meat",
+    "bowl": "Carb", "cake": "Carb", "sandwich": "Meat", "pizza": "Meat", "hot dog": "Meat",
     "carrot": "Veg_Soup", "broccoli": "Veg_Soup", "apple": "Veg_Soup", "orange": "Veg_Soup",
     "donut": "Meat", "cup": "Veg_Soup", "bottle": "Veg_Soup", "dining table": "Tray"
 }
@@ -209,22 +209,19 @@ def load_master_data():
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI Inference Engine (CLIP 語義精準辨識 + YOLOS + Flan-T5)
+# 3. AI Inference Engine
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     m_path = "./Fine-tuned_Model_files" if (os.path.exists("./Fine-tuned_Model_files") and any(os.scandir("./Fine-tuned_Model_files"))) else "hustvl/yolos-tiny"
     
-    # YOLOS 物體偵測
     proc = AutoImageProcessor.from_pretrained(m_path)
     det = AutoModelForObjectDetection.from_pretrained(m_path).to(dev)
-    
-    # Flan-T5 決策生成
     tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
     gen = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base").to(dev)
     
-    # CLIP 零樣本精確菜品辨識 (徹底區分肉醬意粉 vs 焗豬扒飯)
+    # CLIP 語意分類管線
     clip_classifier = pipeline(
         "zero-shot-image-classification", 
         model="openai/clip-vit-base-patch32", 
@@ -253,7 +250,7 @@ def detect_tray(image, engine):
     waste_area = 0
     draw = ImageDraw.Draw(img_draw)
     items, valid_food = [], False
-    color_map = {"Rice": "#EF4444", "Meat": "#F59E0B", "Veg_Soup": "#10B981"}
+    color_map = {"Carb": "#EF4444", "Meat": "#F59E0B", "Veg_Soup": "#10B981"}
     primary = "光盤 Clean Plate"
 
     for box, score, label_id in zip(res["boxes"].tolist(), res["scores"].tolist(), res["labels"].tolist()):
@@ -264,8 +261,8 @@ def detect_tray(image, engine):
         cat = FOOD_WHITELIST[lbl]
         valid_food = True
         
-        if cat == "Rice": 
-            name, primary = "主食殘留 Carb Waste", "主食殘留 Carb Residual"
+        if cat == "Carb": 
+            name, primary = "主食殘留 Carb Residual", "主食殘留 Carb Residual"
         elif cat == "Meat":
             name = "肉類殘留 Meat Residual"
             if "主食" not in primary: 
@@ -295,12 +292,23 @@ def detect_tray(image, engine):
     return img_draw, items, ratio, primary, valid_food
 
 def auto_detect_dish_clip(image, candidate_dishes, engine):
-    """使用多模態 CLIP 語意分類，徹底解決意粉與焗飯的視覺混淆"""
+    """
+    透過 CLIP 深度視覺語意對照候選菜單
+    """
     if not candidate_dishes:
         return "未定義餐點 Undefined Dish", 0.0
+    
+    # 建立英文提示標籤以最大化 CLIP 辨識精準度
+    enhanced_labels = []
+    for d in candidate_dishes:
+        clean = d.strip()
+        enhanced_labels.append(clean)
+        
     try:
-        results = engine["clip"](image, candidate_labels=candidate_dishes)
-        return results[0]["label"], results[0]["score"]
+        results = engine["clip"](image, candidate_labels=enhanced_labels)
+        best_label = results[0]["label"]
+        best_score = results[0]["score"]
+        return best_label, best_score
     except Exception:
         return candidate_dishes[0], 0.75
 
@@ -379,61 +387,82 @@ def render_mode1(df_b, df_d, engine):
             horizontal=True
         )
         
-        img_cap, do_scan = None, False
+        img_cap = None
+        should_run = False
+
         if scan_mode.startswith("🟢"):
             cam = st.camera_input("持續監控畫面 (Live Feed Monitor)", key="live_cam")
             if cam:
                 img_cap = Image.open(cam).convert("RGB")
                 h = hash(img_cap.tobytes()[:3000])
                 if h != st.session_state.get("last_h"):
-                    st.session_state["last_h"], do_scan = h, True
+                    st.session_state["last_h"] = h
+                    should_run = True
                 else: 
                     st.info("🟢 監控中：當前餐盤已完成分析，等待更換餐盤...\n(Monitoring: Active tray already analyzed. Awaiting next tray...)")
         elif scan_mode.startswith("📸"):
             m_cam = st.camera_input("拍照 (Take Snapshot)", key="manual_cam")
             if m_cam: 
-                img_cap, do_scan = Image.open(m_cam).convert("RGB"), True
+                img_cap = Image.open(m_cam).convert("RGB")
+                should_run = True
         else:
-            # 圖片拖入即自動分析
+            # 圖片拖入直接自動執行（使用檔案內容 hash 確保每次新傳或重傳都必定觸發）
             up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
             if up is not None:
+                img_bytes = up.getvalue()
+                current_file_hash = hash(img_bytes)
                 img_cap = Image.open(up).convert("RGB")
-                file_sig = f"{up.name}_{up.size}"
-                if file_sig != st.session_state.get("last_uploaded_sig"):
-                    st.session_state["last_uploaded_sig"] = file_sig
-                    do_scan = True
+                
+                # 如果是新上傳或更換的照片，立刻自動觸發推論
+                if current_file_hash != st.session_state.get("active_upload_hash"):
+                    st.session_state["active_upload_hash"] = current_file_hash
+                    should_run = True
 
-        if img_cap and do_scan:
-            with st.spinner("AI 偵測中: YOLOS 正在過濾非餐盤目標並辨識殘食..."):
+        # 核心推論管線 (只要有圖片且應執行，就一定會刷新右側看板)
+        if img_cap is not None and should_run:
+            with st.spinner("🚀 AI 正在分析餐盤 (YOLOS 邊界框偵測 + CLIP 菜品語義辨識)..."):
                 anno_img, items, ratio, primary_cat, is_food = detect_tray(img_cap, engine)
 
-            if not is_food:
-                st.error("🚫 偵測失敗：未檢測到合法餐盤或食物物件！（已自動過濾人物/背景）\n(Detection Failed: No valid tray or food objects detected! People/backgrounds filtered.)")
-                st.session_state["latest"] = None
-            else:
-                with st.spinner("AI 正在比對菜品特徵 (CLIP Multi-modal Classification)..."):
-                    sel_dish, dish_conf = auto_detect_dish_clip(img_cap, df_d["name"].tolist(), engine) if auto_dish else (st.selectbox("指定餐點 (Select Target Dish)", df_d["name"].tolist()), 1.0)
-                st.success(f"🍱 **AI 識別餐點確認**：`{sel_dish}` (置信度 Confidence: {dish_conf:.1%})")
+                if not is_food:
+                    st.error("🚫 偵測失敗：未檢測到合法餐盤或食物物件！（已自動過濾人物/背景）\n(Detection Failed: No valid tray or food objects detected! People/backgrounds filtered.)")
+                    st.session_state["latest"] = None
+                else:
+                    candidate_names = df_d["name"].tolist()
+                    if auto_dish:
+                        sel_dish, dish_conf = auto_detect_dish_clip(img_cap, candidate_names, engine)
+                    else:
+                        sel_dish = candidate_names[0]
+                        dish_conf = 1.0
 
-                loss_hkd = round(ratio * 25 * 0.45, 1)
-                now = datetime.datetime.now()
-                save_record({
-                    "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"), 
-                    "audit_date": now.strftime("%Y-%m-%d"),
-                    "audit_month": now.strftime("%Y-%m"), 
-                    "branch_name": b_name, 
-                    "branch_level": str(b_meta['level']).split(" ")[0],
-                    "dish_name": sel_dish, 
-                    "primary_waste": primary_cat, 
-                    "waste_ratio": round(ratio * 100, 1),
-                    "cost_waste_hkd": loss_hkd, 
-                    "co2_emission_kg": round(loss_hkd * 0.12, 2)
-                })
-                st.session_state["latest"] = {
-                    "img": anno_img, "dish": sel_dish, "time": now.strftime("%H:%M:%S"),
-                    "ratio": ratio, "cat": primary_cat, "cost": loss_hkd, "branch": b_name, "items": items
-                }
-                st.toast("✅ 審計記錄成功歸檔！(Tray audit recorded and indexed!)")
+                    loss_hkd = round(ratio * 25 * 0.45, 1)
+                    now = datetime.datetime.now()
+                    
+                    save_record({
+                        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"), 
+                        "audit_date": now.strftime("%Y-%m-%d"),
+                        "audit_month": now.strftime("%Y-%m"), 
+                        "branch_name": b_name, 
+                        "branch_level": str(b_meta['level']).split(" ")[0],
+                        "dish_name": sel_dish, 
+                        "primary_waste": primary_cat, 
+                        "waste_ratio": round(ratio * 100, 1),
+                        "cost_waste_hkd": loss_hkd, 
+                        "co2_emission_kg": round(loss_hkd * 0.12, 2)
+                    })
+
+                    st.session_state["latest"] = {
+                        "img": anno_img, 
+                        "dish": sel_dish, 
+                        "conf": dish_conf,
+                        "time": now.strftime("%H:%M:%S"),
+                        "ratio": ratio, 
+                        "cat": primary_cat, 
+                        "cost": loss_hkd, 
+                        "branch": b_name, 
+                        "items": items
+                    }
+                    st.toast(f"✅ 審計記錄完成！已識別為【{sel_dish}】並歸檔至 {b_name}。")
+                    st.rerun()
 
     with c2:
         st.markdown("#### 🎯 前線掃描結果 (Latest Scan Result)")
@@ -441,10 +470,11 @@ def render_mode1(df_b, df_d, engine):
         if not latest:
             st.info("💡 尚未執行偵測或畫面非餐盤。請對準餐盤掃描。\n(No valid tray scan available. Align camera with collection tray.)")
         else:
-            st.image(latest["img"], caption=f"{latest['dish']} ({latest['time']})", use_container_width=True)
+            conf_str = f"({latest.get('conf', 1.0):.1%})" if 'conf' in latest else ""
+            st.image(latest["img"], caption=f"🍽️ {latest['dish']} {conf_str} • {latest['time']}", use_container_width=True)
             k1, k2, k3 = st.columns(3)
             k1.markdown(f'<div class="clean-card"><div class="clean-label">殘食佔比 Waste Ratio</div><div class="clean-val" style="color:{"#EF4444" if latest["ratio"] > 0.3 else "#10B981"}">{latest["ratio"]:.1%}</div></div>', unsafe_allow_html=True)
-            k2.markdown(f'<div class="clean-card"><div class="clean-label">主要殘留 Primary Residual</div><div class="clean-val" style="font-size:1.1rem;margin-top:6px;">{latest["cat"].split(" ")[0]}</div></div>', unsafe_allow_html=True)
+            k2.markdown(f'<div class="clean-card"><div class="clean-label">主要殘留 Primary Residual</div><div class="clean-val" style="font-size:1.05rem;margin-top:6px;">{latest["cat"].split(" ")[0]}</div></div>', unsafe_allow_html=True)
             k3.markdown(f'<div class="clean-card"><div class="clean-label">推算損耗 Loss (HK$)</div><div class="clean-val" style="color:#F59E0B">HK${latest["cost"]}</div></div>', unsafe_allow_html=True)
             st.success(f"📥 **記錄已歸檔 Logged**: `{latest['branch']}`")
 
@@ -567,7 +597,6 @@ def render_mode3(df_b, df_d):
             st.rerun()
 
     with tab2:
-        # 完全繁體中文 + 英文的「新菜品照片註冊與特徵建立」流程
         st.markdown("#### 📸 新增菜品照片上傳與 AI 辨識註冊 (Register New Dish via Photo Upload)")
         st.caption("在此上傳新菜品（如肉醬意粉）的參考照片，AI 將自動提取特徵向量並同步至前線辨識庫。")
         
@@ -663,7 +692,7 @@ def main():
         reset_db()
         st.session_state["latest"] = None
         st.session_state["last_h"] = None
-        st.session_state["last_uploaded_sig"] = None
+        st.session_state["active_upload_hash"] = None
         st.sidebar.success("✅ 資料庫已完全清空！(Database cleared!)")
         st.rerun()
 
