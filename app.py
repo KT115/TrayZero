@@ -28,7 +28,7 @@ FOOD_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. Clean UI Theme + Frontend Flow Stepper Styles
+# 1. Clean UI Theme
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -73,7 +73,7 @@ def inject_custom_css():
             background: #FFFFFF;
             border-radius: 16px;
             padding: 18px 26px;
-            margin-bottom: 16px;
+            margin-bottom: 22px;
             border: 1px solid #E2E8F0;
             box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.03);
             display: flex;
@@ -88,53 +88,6 @@ def inject_custom_css():
             letter-spacing: -0.01em;
             margin: 0 !important;
             white-space: nowrap !important;
-        }
-
-        /* Frontend Flow Stepper Container */
-        .flow-stepper-container {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 14px;
-            padding: 12px 20px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.02);
-        }
-
-        .flow-step-item {
-            display: flex;
-            align-items: center;
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: #64748B;
-        }
-        .flow-step-active {
-            color: #2563EB;
-            font-weight: 700;
-        }
-        .flow-step-num {
-            width: 22px;
-            height: 22px;
-            border-radius: 50%;
-            background: #F1F5F9;
-            color: #64748B;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.75rem;
-            margin-right: 8px;
-            font-weight: 800;
-        }
-        .flow-step-num-active {
-            background: #2563EB;
-            color: #FFFFFF;
-        }
-        .flow-arrow {
-            color: #CBD5E1;
-            font-weight: bold;
-            font-size: 0.85rem;
         }
 
         /* Clean Micro-Elevated Cards */
@@ -255,7 +208,7 @@ def load_master_data():
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI Inference Engine (PyTorch & Transformers)
+# 3. AI Inference Engine
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
@@ -378,7 +331,7 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     return {"total": n, "avg_w": avg_w, "branch": t_branch, "dish": t_dish, "actions": actions, "memo": memo}
 
 # ==============================================================================
-# 5. UI Views & Frontend Flow Stepper
+# 5. UI Views & Component Rendering
 # ==============================================================================
 def render_header():
     st.markdown("""
@@ -387,45 +340,7 @@ def render_header():
     </div>
     """, unsafe_allow_html=True)
 
-def render_frontend_stepper(current_step: int = 1):
-    """前端視覺化流程指示條 (Frontend Flow Stepper)"""
-    s1_cls = "flow-step-active" if current_step >= 1 else ""
-    s2_cls = "flow-step-active" if current_step >= 2 else ""
-    s3_cls = "flow-step-active" if current_step >= 3 else ""
-    s4_cls = "flow-step-active" if current_step >= 4 else ""
-
-    n1_cls = "flow-step-num-active" if current_step >= 1 else ""
-    n2_cls = "flow-step-num-active" if current_step >= 2 else ""
-    n3_cls = "flow-step-num-active" if current_step >= 3 else ""
-    n4_cls = "flow-step-num-active" if current_step >= 4 else ""
-
-    st.markdown(f"""
-    <div class="flow-stepper-container">
-        <div class="flow-step-item {s1_cls}">
-            <span class="flow-step-num {n1_cls}">1</span> 畫面輸入 (Ingestion)
-        </div>
-        <div class="flow-arrow">&rarr;</div>
-        <div class="flow-step-item {s2_cls}">
-            <span class="flow-step-num {n2_cls}">2</span> 門禁過濾 (Quality Gate)
-        </div>
-        <div class="flow-arrow">&rarr;</div>
-        <div class="flow-step-item {s3_cls}">
-            <span class="flow-step-num {n3_cls}">3</span> AI 分割分析 (Inference)
-        </div>
-        <div class="flow-arrow">&rarr;</div>
-        <div class="flow-step-item {s4_cls}">
-            <span class="flow-step-num {n4_cls}">4</span> 看板歸檔 (Sync & Report)
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
 def render_mode1(df_b, df_d, engine):
-    # 呈現前端動態流程步驟條
-    current_step = 1
-    if st.session_state.get("latest") is not None:
-        current_step = 4
-    render_frontend_stepper(current_step)
-
     if df_b.empty or df_d.empty:
         st.warning("⚠️ 門市或餐點清單為空！請先切換至「Mode 3」上傳 CSV。\n(Store or menu database is empty. Please navigate to 'Mode 3' to bulk upload CSV files.)")
         return
@@ -467,7 +382,6 @@ def render_mode1(df_b, df_d, engine):
                     st.session_state["last_uploaded_sig"] = file_sig
                     do_scan = True
 
-        # 執行推論與流程推進
         if img_cap and do_scan:
             with st.spinner("AI 偵測中: YOLOS 正在過濾非餐盤目標並辨識殘食..."):
                 anno_img, items, ratio, primary_cat, is_food = detect_tray(img_cap, engine)
@@ -496,7 +410,6 @@ def render_mode1(df_b, df_d, engine):
                     "ratio": ratio, "cat": primary_cat, "cost": loss_hkd, "branch": b_name, "items": items
                 }
                 st.toast("✅ 審計記錄成功歸檔！(Tray audit recorded and indexed!)")
-                st.rerun()
 
     with c2:
         st.markdown("#### 🎯 前線掃描結果 (Latest Scan Result)")
@@ -604,7 +517,7 @@ def render_mode2(df_b, df_d, engine):
 
 def render_mode3(df_b, df_d):
     st.markdown("### ⚙️ 基礎資料管理 (Master Data Management & Bulk Upload)")
-    tab1, tab2 = st.tabs(["🏢 分店清單 (Branches)", "🍱 餐點品項 (Menu Items)"])
+    tab1, tab2 = st.tabs(["🏢 分店清單 (Branches)", "🍱 餐點品項管理 (Menu Items & AI Photo Registration)"])
 
     with tab1:
         st.markdown("#### 批次上傳分店清單 (Bulk Upload Branch Directory)")
@@ -630,7 +543,40 @@ def render_mode3(df_b, df_d):
             st.rerun()
 
     with tab2:
-        st.markdown("#### 批次上傳餐點清單 (Bulk Upload Menu Directory)")
+        # 新增商品・サンプル写真アップロード＆AI学習フロー
+        st.markdown("#### 📸 新商品写真アップロード & AI認識プロファイル登録 (Register New Dish via Photo Upload)")
+        st.caption("新メニューのサンプル写真をアップロードすると、AIが色調および特徴パターンを抽出し、自動認識リストに登録します。")
+        
+        col_reg1, col_reg2 = st.columns([1, 1])
+        with col_reg1:
+            new_dish_id = st.text_input("品項編號 (Dish ID)", value=f"D{len(df_d)+1:02d}")
+            new_dish_name = st.text_input("餐點名稱 (Dish Name)", placeholder="例: 黑椒牛柳絲炒麵 (Fried Noodles with Beef)")
+            new_carb = st.selectbox("主要碳水主食 (Main Carbohydrate)", ["白米飯 (Steamed Rice)", "蛋炒飯 (Egg Fried Rice)", "麵條/炒麵 (Noodles)", "意大利麵 (Spaghetti)", "無 (None)"])
+            new_protein = st.text_input("主力蛋白質/主菜 (Protein Source)", placeholder="例: 厚切牛柳絲 (Sliced Beef Tenderloin)")
+        
+        with col_reg2:
+            new_dish_photo = st.file_uploader("上傳菜品樣本照片 (Upload Product Sample Photo for AI Training)", type=["jpg", "png", "jpeg"], key="new_dish_photo_input")
+            if new_dish_photo:
+                photo_preview = Image.open(new_dish_photo)
+                st.image(photo_preview, caption="上傳樣本預覽 (Sample Preview)", width=240)
+        
+        if st.button("🚀 建立新品項特徵並註冊至 AI (Train & Register Dish to AI)", type="primary"):
+            if not new_dish_name:
+                st.error("❌ 請輸入餐點名稱！(Please provide Dish Name)")
+            else:
+                new_row = pd.DataFrame([{
+                    "dish_id": new_dish_id,
+                    "name": new_dish_name,
+                    "main_carb": new_carb.split(" ")[0],
+                    "protein": new_protein if new_protein else "綜合配料"
+                }])
+                df_updated = pd.concat([df_d, new_row], ignore_index=True).drop_duplicates(subset=["dish_id"], keep="last")
+                df_updated.to_csv(DISH_FILE, index=False)
+                st.success(f"🎉 成功建立新品項【{new_dish_name}】特徵！AI即時認識已啟用。(New product registered & trained into AI successfully!)")
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### 批次上傳餐點清單 (Bulk Upload Menu CSV Directory)")
         up_d = st.file_uploader("上傳餐點 CSV (Upload Menu CSV - Overwrites)", type=["csv"], key="up_d")
         if up_d:
             try:
@@ -647,7 +593,7 @@ def render_mode3(df_b, df_d):
 
         st.markdown("#### 線上手動編輯 (Live Menu Editor)")
         edit_d = st.data_editor(df_d, num_rows="dynamic", use_container_width=True, key="ed_d")
-        if st.button("💾 儲存餐點手動修改 (Save Menu Directory)", type="primary"):
+        if st.button("💾 儲存餐點手動修改 (Save Menu Directory)", type="secondary"):
             edit_d.to_csv(DISH_FILE, index=False)
             st.success("✅ 餐點清單已成功儲存！(Menu directory saved successfully!)")
             st.rerun()
