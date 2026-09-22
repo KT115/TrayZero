@@ -11,28 +11,12 @@ from transformers import (
     AutoImageProcessor, 
     AutoModelForObjectDetection,
     AutoTokenizer, 
-    AutoModelForSeq2SeqLM
+    AutoModelForSeq2SeqLM,
+    pipeline
 )
 
 # ==============================================================================
-# 1. 頁面基本配置與 Session State 初始化
-# ==============================================================================
-st.set_page_config(
-    page_title="大家樂 (Café de Coral) 智能餐盤殘食審計系統",
-    page_icon="🍽️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-# 初始化最新偵測快取 (跨刷新常駐顯示)
-if "latest_result" not in st.session_state:
-    st.session_state["latest_result"] = None
-
-if "last_scanned_hash" not in st.session_state:
-    st.session_state["last_scanned_hash"] = None
-
-# ==============================================================================
-# 2. 基礎資料檔案與 SQLite 資料庫
+# 0. 全域常數設定 (Global Constants & Defaults)
 # ==============================================================================
 BRANCH_FILE = "master_branches.csv"
 DISH_FILE = "master_dishes.csv"
@@ -75,7 +59,63 @@ DEFAULT_DISHES = [
     {"dish_id": "D04", "name": "香辣肉燥肉餅飯 (Minced Pork Patty Rice)", "main_carb": "白米飯", "protein": "煎肉餅"}
 ]
 
-def load_master_data():
+
+# ==============================================================================
+# 1. 資料庫與持久化函數群 (Database & Master Data Management)
+# ==============================================================================
+def init_sqlite_db(db_path: str = DB_FILE) -> None:
+    """初始化審計數據庫架構"""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT,
+                branch_name TEXT,
+                branch_level TEXT,
+                dish_name TEXT,
+                primary_waste TEXT,
+                waste_ratio REAL,
+                cost_waste_hkd REAL,
+                co2_emission_kg REAL
+            )
+        """)
+        conn.commit()
+
+
+def save_audit_record(record: dict, db_path: str = DB_FILE) -> None:
+    """插入單筆審計結果到資料庫"""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO audit_logs (
+                timestamp, branch_name, branch_level, dish_name, 
+                primary_waste, waste_ratio, cost_waste_hkd, co2_emission_kg
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            record["timestamp"], record["branch_name"], record["branch_level"],
+            record["dish_name"], record["primary_waste"], record["waste_ratio"],
+            record["cost_waste_hkd"], record["co2_emission_kg"]
+        ))
+        conn.commit()
+
+
+def get_all_audit_records(db_path: str = DB_FILE) -> pd.DataFrame:
+    """查詢所有歷史審計資料"""
+    with sqlite3.connect(db_path) as conn:
+        return pd.read_sql_query("SELECT * FROM audit_logs ORDER BY id DESC", conn)
+
+
+def truncate_audit_db(db_path: str = DB_FILE) -> None:
+    """清空資料庫所有記錄"""
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM audit_logs")
+        conn.commit()
+
+
+def load_master_meta() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """載入或初始化分店與菜品基礎設定"""
     if os.path.exists(BRANCH_FILE):
         df_b = pd.read_csv(BRANCH_FILE)
     else:
@@ -89,134 +129,87 @@ def load_master_data():
         df_d.to_csv(DISH_FILE, index=False)
     return df_b, df_d
 
-df_branches, df_dishes = load_master_data()
-
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            branch_name TEXT,
-            branch_level TEXT,
-            dish_name TEXT,
-            primary_waste TEXT,
-            waste_ratio REAL,
-            cost_waste_hkd REAL,
-            co2_emission_kg REAL
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def insert_audit_record(record):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO audit_logs (
-            timestamp, branch_name, branch_level, dish_name, 
-            primary_waste, waste_ratio, cost_waste_hkd, co2_emission_kg
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        record["timestamp"], record["branch_name"], record["branch_level"],
-        record["dish_name"], record["primary_waste"], record["waste_ratio"],
-        record["cost_waste_hkd"], record["co2_emission_kg"]
-    ))
-    conn.commit()
-    conn.close()
-
-def fetch_all_audit_records():
-    conn = sqlite3.connect(DB_FILE)
-    df = pd.read_sql_query("SELECT * FROM audit_logs ORDER BY id DESC", conn)
-    conn.close()
-    return df
-
-def clear_all_audit_records():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM audit_logs")
-    conn.commit()
-    conn.close()
-
-init_db()
 
 # ==============================================================================
-# 3. 雙 Hugging Face 深度學習模型初始化 (原生類別載入)
+# 2. 深度學習模型引擎 (Hugging Face Pipelines & Native Models)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
-def load_hf_models():
+def init_ai_pipeline_engine():
+    """載入視覺偵測、文字生成與零樣本分類模型"""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model_path = "./Fine-tuned_Model_files" if os.path.exists("./Fine-tuned_Model_files") and any(os.scandir("./Fine-tuned_Model_files")) else "hustvl/yolos-tiny"
     
+    # 1. 物件偵測模型 (YOLOS)
     img_processor = AutoImageProcessor.from_pretrained(model_path)
     det_model = AutoModelForObjectDetection.from_pretrained(model_path).to(device)
     det_model.eval()
     
+    # 2. 決策生成模型 (Flan-T5)
     tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
     t5_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base").to(device)
     t5_model.eval()
     
-    return img_processor, det_model, tokenizer, t5_model, device
-
-with st.spinner("🚀 正在啟動雙核心 AI 審計引擎 (YOLOS-tiny + Flan-T5)..."):
-    img_processor, det_model, nlp_tokenizer, nlp_model, runtime_device = load_hf_models()
-
-# ==============================================================================
-# 4. 偵測與推論輔助函式
-# ==============================================================================
-def execute_detection(image, score_threshold=0.20):
-    inputs = img_processor(images=image, return_tensors="pt").to(runtime_device)
-    with torch.no_grad():
-        outputs = det_model(**inputs)
+    # 3. 零樣本菜品識別 (CLIP)
+    clip_classifier = pipeline(
+        "zero-shot-image-classification", 
+        model="openai/clip-vit-base-patch32", 
+        device=0 if torch.cuda.is_available() else -1
+    )
     
-    target_sizes = torch.tensor([image.size[::-1]]).to(runtime_device)
-    results = img_processor.post_process_object_detection(
-        outputs, threshold=score_threshold, target_sizes=target_sizes
+    return {
+        "processor": img_processor,
+        "detector": det_model,
+        "tokenizer": tokenizer,
+        "generator": t5_model,
+        "clip": clip_classifier,
+        "device": device
+    }
+
+
+def predict_dish_category(image: Image.Image, candidate_labels: list[str], engine: dict) -> tuple[str, float]:
+    """透過 CLIP Zero-Shot 分類自動識別托盤上的主力餐點"""
+    results = engine["clip"](image, candidate_labels=candidate_labels)
+    return results[0]["label"], results[0]["score"]
+
+
+def run_tray_waste_detection(image: Image.Image, engine: dict, threshold: float = 0.20) -> tuple[Image.Image, list[dict], float, str]:
+    """執行 YOLOS 目標偵測並繪製邊界框"""
+    inputs = engine["processor"](images=image, return_tensors="pt").to(engine["device"])
+    with torch.no_grad():
+        outputs = engine["detector"](**inputs)
+    
+    target_sizes = torch.tensor([image.size[::-1]]).to(engine["device"])
+    results = engine["processor"].post_process_object_detection(
+        outputs, threshold=threshold, target_sizes=target_sizes
     )[0]
     
     annotated_img = image.copy()
     draw = ImageDraw.Draw(annotated_img)
-    
     img_w, img_h = image.size
     total_area = img_w * img_h
     detected_items = []
     waste_box_area = 0
     
-    color_map = {
-        "Rice": "#E74C3C",
-        "Meat": "#E67E22",
-        "Veg_Soup": "#27AE60"
-    }
-    
-    boxes = results["boxes"].tolist()
-    scores = results["scores"].tolist()
-    labels = results["labels"].tolist()
-    
+    color_map = {"Rice": "#E74C3C", "Meat": "#E67E22", "Veg_Soup": "#27AE60"}
     primary_category = "光盤 (Clean Plate)"
     
-    for box, score, label_id in zip(boxes, scores, labels):
-        raw_label = det_model.config.id2label.get(label_id, "item")
+    for box, score, label_id in zip(results["boxes"].tolist(), results["scores"].tolist(), results["labels"].tolist()):
+        raw_label = engine["detector"].config.id2label.get(label_id, "item")
         
         if raw_label in ["bowl", "dining table", "cake"]:
-            category = "Rice"
-            display_name = "白飯/主食殘留 (Rice Waste)"
+            category, display_name = "Rice", "白飯/主食殘留 (Rice Waste)"
             primary_category = "白飯/主食殘留"
         elif raw_label in ["sandwich", "pizza", "hot dog"]:
-            category = "Meat"
-            display_name = "主菜肉類殘留 (Meat Residual)"
+            category, display_name = "Meat", "主菜肉類殘留 (Meat Residual)"
             if "白飯" not in primary_category:
                 primary_category = "主菜肉類殘留"
         else:
-            category = "Veg_Soup"
-            display_name = f"配菜/醬汁殘留 ({raw_label})"
+            category, display_name = "Veg_Soup", f"配菜/醬汁殘留 ({raw_label})"
             if primary_category == "光盤 (Clean Plate)":
                 primary_category = "配菜/醬汁殘留"
             
-        xmin, ymin, xmax, ymax = box
-        xmin, ymin = max(0, xmin), max(0, ymin)
-        xmax, ymax = min(img_w, xmax), min(img_h, ymax)
-        
+        xmin, ymin = max(0, box[0]), max(0, box[1])
+        xmax, ymax = min(img_w, box[2]), min(img_h, box[3])
         box_area = (xmax - xmin) * (ymax - ymin)
         waste_box_area += box_area
         
@@ -235,7 +228,12 @@ def execute_detection(image, score_threshold=0.20):
     waste_ratio = min(1.0, waste_box_area / (total_area * 0.65)) if total_area > 0 else 0.0
     return annotated_img, detected_items, waste_ratio, primary_category
 
-def generate_kitchen_decision(branch_name, branch_level, base_rice_g, strategy, dish_name, waste_ratio):
+
+def generate_portioning_directive(
+    branch_name: str, branch_level: str, base_rice_g: float, 
+    strategy: str, dish_name: str, waste_ratio: float, engine: dict
+) -> str:
+    """透過 Flan-T5 依據分店等級與殘留率動態生成後廚行動建議"""
     prompt = (
         f"You are the executive kitchen director of Cafe de Coral. "
         f"Store: {branch_name} ({branch_level}). Target Dish: {dish_name}. "
@@ -244,57 +242,72 @@ def generate_kitchen_decision(branch_name, branch_level, base_rice_g, strategy, 
         f"Strategy: {strategy} "
         f"Provide one actionable kitchen portion adjustment action in grams and one POS ordering change."
     )
-    inputs = nlp_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True).to(runtime_device)
+    inputs = engine["tokenizer"](prompt, return_tensors="pt", max_length=512, truncation=True).to(engine["device"])
     with torch.no_grad():
-        outputs = nlp_model.generate(**inputs, max_new_tokens=90, do_sample=False)
-    return nlp_tokenizer.decode(outputs[0], skip_special_tokens=True)
+        outputs = engine["generator"].generate(**inputs, max_new_tokens=90, do_sample=False)
+    return engine["tokenizer"].decode(outputs[0], skip_special_tokens=True)
+
+
+def calculate_cost_and_esg(waste_ratio: float, branch_level: str) -> tuple[float, float]:
+    """計算食材損失成本與碳排放當量"""
+    unit_rice_cost = 0.015
+    cut_g = 40 if "Level A" in str(branch_level) else 20
+    saved_hkd = round(cut_g * unit_rice_cost * 25, 1)
+    saved_co2 = round((cut_g * 25 / 1000) * 1.6, 2)
+    return saved_hkd, saved_co2
+
 
 # ==============================================================================
-# 5. 側邊欄切換：Mode 1, Mode 2, Mode 3
+# 3. 畫面渲染函數群 (UI View Components)
 # ==============================================================================
-st.sidebar.title("🎛️ 系統模式選擇")
-system_mode = st.sidebar.radio(
-    "切換工作模式",
-    [
-        "Mode 1: 前線餐盤智能偵測 (Tray Detection)", 
-        "Mode 2: 總部即時營運大盤 (Real-time Dashboard)",
-        "Mode 3: 基礎資料設定與上傳 (Master Data Management)"
-    ],
-    index=0
-)
+def render_header():
+    """渲染主標題與架構說明"""
+    st.title("🍽️ 大家樂 (Café de Coral) 智能餐盤殘食審計與中央調配系統")
+    st.markdown(
+        "**ISOM5240 Group Project** | 雙 Pipeline 深度學習架構: "
+        "`YOLOS-tiny (Object Detection)` $\\rightarrow$ `Flan-T5 (Context Decision Engine)`"
+    )
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("⚙️ 測試管理工具")
-if st.sidebar.button("🗑️ 清空所有審計記錄 (Reset DB)", type="secondary"):
-    clear_all_audit_records()
-    st.session_state["latest_result"] = None
-    st.session_state["last_scanned_hash"] = None
-    st.sidebar.success("✅ 資料庫與最新快取已清空！")
-    st.rerun()
 
-# ==============================================================================
-# 6. MODE 1: 前線餐盤智能偵測 (Tray Detection with Persistent Live Cam)
-# ==============================================================================
-if system_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
-    st.subheader("📸 Mode 1: 前線餐盤智慧審計機 (Live Camera 常駐掃描)")
-    st.caption("Live Camera 保持常駐監控 ➔ 餐盤靜止 2 秒自動鎖定 ➔ 雙 Pipeline 運算 ➔ 右側即時常駐顯示 Latest Result")
+def render_sidebar_controls() -> str:
+    """渲染側邊欄模式選擇與除錯工具"""
+    st.sidebar.title("🎛️ 系統模式選擇")
+    system_mode = st.sidebar.radio(
+        "切換工作模式",
+        [
+            "Mode 1: 前線餐盤智能偵測 (Tray Detection)", 
+            "Mode 2: 總部即時營運大盤 (Real-time Dashboard)",
+            "Mode 3: 基礎資料設定與上傳 (Master Data Management)"
+        ],
+        index=0
+    )
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("⚙️ 測試管理工具")
+    if st.sidebar.button("🗑️ 清空所有審計記錄 (Reset DB)", type="secondary"):
+        truncate_audit_db()
+        st.session_state["latest_result"] = None
+        st.session_state["last_scanned_hash"] = None
+        st.sidebar.success("✅ 資料庫與快取已清空！")
+        st.rerun()
+    return system_mode
 
-    # 左右排版：左邊為相機與操作區，右邊為最新偵測結果看板 (Latest Result)
+
+def render_mode_1_detection(df_branches: pd.DataFrame, df_dishes: pd.DataFrame, engine: dict):
+    """Mode 1: 前線餐盤智能偵測與 Live 監控"""
+    st.subheader("📸 Mode 1: 前線餐盤智慧審計機 (Live Camera 常駐掃描 + 餐點自動辨識)")
+    st.caption("Live Camera 保持監控 ➔ 畫面靜止 2 秒自動鎖定 ➔ AI 自動識別餐點與殘食 ➔ 同步至總部大盤")
+
     col_left, col_right = st.columns([1.1, 0.9])
 
     with col_left:
-        # 分店與餐點選擇
-        st.markdown("##### 🏢 審計門市與餐點配置")
-        c_b, c_d = st.columns(2)
-        with c_b:
-            selected_branch_name = st.selectbox("執勤門市", df_branches["name"].tolist())
-            b_row = df_branches[df_branches["name"] == selected_branch_name].iloc[0]
-        with c_d:
-            selected_dish = st.selectbox("抽檢餐點", df_dishes["name"].tolist())
-
+        st.markdown("##### 🏢 執勤分店與餐點辨識配置")
+        selected_branch_name = st.selectbox("執勤門市", df_branches["name"].tolist())
+        b_row = df_branches[df_branches["name"] == selected_branch_name].iloc[0]
         st.caption(f"門市等級: `{b_row['level']}` | 標準飯量: `{b_row['base_rice_g']}g` | 區域: `{b_row['district']}`")
 
-        # 輸入方式選擇
+        auto_dish_toggle = st.checkbox("🤖 啟用 AI 自動辨識餐點類型 (Auto-Detect Dish)", value=True)
+        candidate_dishes = df_dishes["name"].tolist()
+
         scan_mode = st.radio(
             "相機與輸入模式",
             ["🟢 Live Camera 長開 (靜止自動偵測)", "📸 手動快照模式 (Manual Snapshot)", "📁 照片檔案上傳 (Upload)"],
@@ -307,12 +320,9 @@ if system_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
         if scan_mode == "🟢 Live Camera 長開 (靜止自動偵測)":
             st.markdown("**即時視頻流 (Live Camera 保持開啟中)**")
             live_shot = st.camera_input("持續監控畫面", key="permanent_live_cam")
-            
             if live_shot:
                 captured_image = Image.open(live_shot).convert("RGB")
                 current_frame_hash = hash(captured_image.tobytes()[:3000])
-                
-                # 比對雜湊判定畫面是否靜止且未重複掃描
                 if current_frame_hash != st.session_state["last_scanned_hash"]:
                     countdown_box = st.empty()
                     for s in range(2, 0, -1):
@@ -337,23 +347,29 @@ if system_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
                 if st.button("🚀 執行上傳相片偵測", type="primary"):
                     should_run_detection = True
 
-        # 執行偵測核心並更新 Latest Result
+        # 餐點名稱自動識別或手動覆蓋
+        selected_dish = None
+        if captured_image:
+            if auto_dish_toggle:
+                with st.spinner("AI 正在識別餐點品項 (CLIP Zero-Shot)..."):
+                    detected_dish, dish_conf = predict_dish_category(captured_image, candidate_dishes, engine)
+                st.success(f"🔍 **AI 自動辨識餐點**：`{detected_dish}` (置信度: {dish_conf:.1%})")
+                selected_dish = detected_dish
+            else:
+                selected_dish = st.selectbox("抽檢餐點 (手動微調)", candidate_dishes)
+
+        # 執行推論與寫入 DB
         if captured_image and should_run_detection:
-            with st.spinner("Pipeline 1 & 2 運算中: YOLOS-tiny 正在繪製 Bounding Box..."):
-                annotated_img, item_list, waste_ratio, primary_cat = execute_detection(captured_image)
-                kitchen_advice = generate_kitchen_decision(
+            with st.spinner("Pipeline 1 & 2 運算中: YOLOS 繪製框線與 Flan-T5 生成決策..."):
+                annotated_img, item_list, waste_ratio, primary_cat = run_tray_waste_detection(captured_image, engine)
+                kitchen_advice = generate_portioning_directive(
                     selected_branch_name, b_row["level"], b_row["base_rice_g"], 
-                    b_row["strategy"], selected_dish, waste_ratio
+                    b_row["strategy"], selected_dish, waste_ratio, engine
                 )
 
-            # 財務與碳排計算
-            unit_rice_cost = 0.015
-            cut_g = 40 if "Level A" in str(b_row["level"]) else 20
-            saved_hkd = round(cut_g * unit_rice_cost * 25, 1)
-            saved_co2 = round((cut_g * 25 / 1000) * 1.6, 2)
+            saved_hkd, saved_co2 = calculate_cost_and_esg(waste_ratio, b_row["level"])
             timestamp_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # 寫入 SQLite 資料庫
             db_record = {
                 "timestamp": timestamp_str,
                 "branch_name": selected_branch_name,
@@ -364,9 +380,8 @@ if system_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
                 "cost_waste_hkd": saved_hkd,
                 "co2_emission_kg": saved_co2
             }
-            insert_audit_record(db_record)
+            save_audit_record(db_record)
 
-            # 更新 Session State 中的 Latest Result
             st.session_state["latest_result"] = {
                 "image": annotated_img,
                 "item_list": item_list,
@@ -379,89 +394,78 @@ if system_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
                 "cost": saved_hkd,
                 "co2": saved_co2
             }
-            st.toast("✅ 偵測完成！最新結果已更新並同步至資料庫。")
+            st.toast("✅ 偵測完成！結果已自動同步至資料庫與總部大盤。")
 
-    # 右側：最新偵測結果看板 (Latest Detection Result)
+    # 右側：最新偵測看板
     with col_right:
         st.markdown("### 🎯 最新偵測結果 (Latest Detection Result)")
-        latest = st.session_state["latest_result"]
+        latest = st.session_state.get("latest_result")
 
         if latest is None:
             st.info("💡 尚未執行偵測。請保持 Live Camera 開啟並放置餐盤，或手動拍攝/上傳。")
-            # 預設佔位圖
             placeholder_img = Image.new("RGB", (400, 300), color=(240, 240, 240))
             d = ImageDraw.Draw(placeholder_img)
             d.text((120, 140), "等待餐盤輸入中...", fill=(150, 150, 150))
             st.image(placeholder_img, caption="即時預覽看板", use_container_width=True)
         else:
-            # 顯示最新標籤圖
-            st.image(latest["image"], caption=f"最新審計影像 ({latest['timestamp']})", use_container_width=True)
-
-            # 核心指標卡片
+            st.image(latest["image"], caption=f"最新審計影像 [{latest['dish_name']}] ({latest['timestamp']})", use_container_width=True)
             m1, m2, m3 = st.columns(3)
             m1.metric("殘食佔比", f"{latest['waste_ratio']:.1%}")
-            m2.metric("主要殘留", latest["primary_cat"])
+            m2.metric("辨識菜品", latest["dish_name"].split(" ")[0])
             m3.metric("損耗金額", f"HK$ {latest['cost']}")
-
-            # 後廚即時行動卡片
             st.success(f"👨‍🍳 **後廚出餐校準指令 ({latest['branch_name']})**:\n\n{latest['kitchen_advice']}")
-
-            # 物件明細
             if latest["item_list"]:
                 with st.expander("查看 Bounding Box 偵測物件明細", expanded=False):
                     st.dataframe(pd.DataFrame(latest["item_list"]), use_container_width=True)
 
-# ==============================================================================
-# 7. MODE 2: 總部即時營運大盤 (Real-time Dashboard - SQLite 連動)
-# ==============================================================================
-elif system_mode == "Mode 2: 總部即時營運大盤 (Real-time Dashboard)":
+
+def render_mode_2_dashboard():
+    """Mode 2: 總部即時營運與 ESG 大盤視圖"""
     st.subheader("📊 Mode 2: 大家樂集團總部 - 跨分店即時營運與 ESG 大盤")
     st.caption("數據來源：直接讀取 SQLite 資料庫中來自 Mode 1 的真實偵測記錄")
     
-    df_db = fetch_all_audit_records()
-    
+    df_db = get_all_audit_records()
     if df_db.empty:
         st.warning("⚠️ 目前資料庫中無任何審計數據。請切換至「Mode 1」完成幾次掃描測試！")
-    else:
-        total_scans = len(df_db)
-        avg_waste = df_db["waste_ratio"].mean()
-        total_waste_hkd = df_db["cost_waste_hkd"].sum()
-        total_co2 = df_db["co2_emission_kg"].sum()
-        
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("真實審計累積盤數", f"{total_scans} 盤")
-        kpi2.metric("全港平均殘食佔比", f"{avg_waste:.1f} %")
-        kpi3.metric("累積食材損耗成本", f"HK$ {total_waste_hkd:,.1f}")
-        kpi4.metric("累積碳排放當量", f"{total_co2:.2f} kg CO2e")
-        
-        st.markdown("---")
-        
-        col_c1, col_c2 = st.columns([1, 1])
-        with col_c1:
-            st.markdown("#### 🏢 各分店真實平均殘食率 (%)")
-            branch_stat = df_db.groupby("branch_name")["waste_ratio"].mean().reset_index()
-            st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#FF4B4B")
-            
-        with col_c2:
-            st.markdown("#### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
-            level_stat = df_db.groupby("branch_level")["cost_waste_hkd"].sum().reset_index()
-            st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd")
-            
-        st.markdown("### 📋 SQLite 資料庫即時紀錄流水表")
-        st.dataframe(df_db, use_container_width=True)
-        
-        csv_data = df_db.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 匯出當前審計數據為 CSV",
-            data=csv_data,
-            file_name=f"cafedecoral_audit_export_{datetime.date.today()}.csv",
-            mime="text/csv"
-        )
+        return
 
-# ==============================================================================
-# 8. MODE 3: 基礎資料設定與上傳 (Master Data Management)
-# ==============================================================================
-else:
+    total_scans = len(df_db)
+    avg_waste = df_db["waste_ratio"].mean()
+    total_waste_hkd = df_db["cost_waste_hkd"].sum()
+    total_co2 = df_db["co2_emission_kg"].sum()
+    
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1.metric("真實審計累積盤數", f"{total_scans} 盤")
+    kpi2.metric("全港平均殘食佔比", f"{avg_waste:.1f} %")
+    kpi3.metric("累積食材損耗成本", f"HK$ {total_waste_hkd:,.1f}")
+    kpi4.metric("累積碳排放當量", f"{total_co2:.2f} kg CO2e")
+    
+    st.markdown("---")
+    col_c1, col_c2 = st.columns([1, 1])
+    with col_c1:
+        st.markdown("#### 🏢 各分店真實平均殘食率 (%)")
+        branch_stat = df_db.groupby("branch_name")["waste_ratio"].mean().reset_index()
+        st.bar_chart(branch_stat, x="branch_name", y="waste_ratio", color="#FF4B4B")
+        
+    with col_c2:
+        st.markdown("#### 🏷️ 門市等級 (Level A/B/C) 浪費金額分佈 (HK$)")
+        level_stat = df_db.groupby("branch_level")["cost_waste_hkd"].sum().reset_index()
+        st.bar_chart(level_stat, x="branch_level", y="cost_waste_hkd")
+        
+    st.markdown("### 📋 SQLite 資料庫即時紀錄流水表")
+    st.dataframe(df_db, use_container_width=True)
+    
+    csv_data = df_db.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="📥 匯出當前審計數據為 CSV",
+        data=csv_data,
+        file_name=f"cafedecoral_audit_export_{datetime.date.today()}.csv",
+        mime="text/csv"
+    )
+
+
+def render_mode_3_master_data(df_branches: pd.DataFrame, df_dishes: pd.DataFrame):
+    """Mode 3: 基礎資料設定與 CSV 批量維護"""
     st.subheader("⚙️ Mode 3: 基礎資料管理 (分店清單 & 餐點品項 CSV 上傳)")
     st.caption("在此維護分店清單與餐點清單。支援上傳 CSV 批量更新、下載範本，或直接在網頁表格中手動修改。")
 
@@ -532,3 +536,33 @@ else:
             edited_dishes.to_csv(DISH_FILE, index=False)
             st.success("✅ 餐點清單已更新！")
             st.rerun()
+
+
+# ==============================================================================
+# 4. 主執行程序入口 (Main Execution Entry)
+# ==============================================================================
+def main():
+    """主程序控制中心"""
+    # 1. 初始化資料庫與全域資料
+    init_sqlite_db()
+    df_branches, df_dishes = load_master_meta()
+    
+    # 2. 載入 AI 模型引擎
+    with st.spinner("🚀 正在啟動多模態 AI 引擎 (YOLOS-tiny + Flan-T5 + CLIP)..."):
+        engine = init_ai_pipeline_engine()
+        
+    # 3. 渲染主頁面標題與導航
+    render_header()
+    selected_mode = render_sidebar_controls()
+    
+    # 4. 根據模式路由
+    if selected_mode == "Mode 1: 前線餐盤智能偵測 (Tray Detection)":
+        render_mode_1_detection(df_branches, df_dishes, engine)
+    elif selected_mode == "Mode 2: 總部即時營運大盤 (Real-time Dashboard)":
+        render_mode_2_dashboard()
+    else:
+        render_mode_3_master_data(df_branches, df_dishes)
+
+
+if __name__ == "__main__":
+    main()
