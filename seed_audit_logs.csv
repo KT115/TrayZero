@@ -1,0 +1,4 @@
+timestamp,audit_date,audit_month,branch_name,branch_level,dish_name,primary_waste,waste_ratio,cost_waste_hkd,co2_emission_kg
+2026-09-23 12:30:15,2026-09-23,2026-09,將軍澳 Popcorn 店,Level B,焗肉醬意粉 (Baked Spaghetti Bolognese),主食殘留 Carb Residual,28.5,12.8,1.54
+2026-09-23 12:45:20,2026-09-23,2026-09,中環威靈頓街店,Level A,一哥焗豬扒飯 (Baked Pork Chop Rice),主食殘留 Carb Residual,34.0,15.3,1.84
+2026-09-23 13:10:05,2026-09-23,2026-09,香港科技大學店 (HKUST),Level C,咖喱牛腩飯 (Curry Beef Brisket Rice),肉類殘留 Meat Residual,18.2,8.2,0.98
