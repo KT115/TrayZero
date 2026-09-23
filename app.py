@@ -15,12 +15,14 @@ from transformers import (
 )
 
 # ==============================================================================
-# 0. Global Constants & Configuration
+# 0. 全域路徑綁定（確保方案 A 穩定讀取 GitHub 根目錄檔案）
 # ==============================================================================
-BRANCH_FILE = "master_branches.csv"
-DISH_FILE = "master_dishes.csv"
-DB_FILE = "trayzero_audit.db"
-LOGO_FILE = "CDC_810.png"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BRANCH_FILE = os.path.join(BASE_DIR, "master_branches.csv")
+DISH_FILE = os.path.join(BASE_DIR, "master_dishes.csv")
+DB_FILE = os.path.join(BASE_DIR, "trayzero_audit.db")
+LOGO_FILE_PNG = os.path.join(BASE_DIR, "CDC_810.png")
+LOGO_FILE_JPG = os.path.join(BASE_DIR, "CDC_810.jpg")
 
 FOOD_WHITELIST = {
     "bowl": "Carb", "cake": "Carb", "sandwich": "Meat", "pizza": "Meat", "hot dog": "Meat",
@@ -29,7 +31,7 @@ FOOD_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. Clean UI Theme
+# 1. Clean UI 樣式注入
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -55,7 +57,7 @@ def inject_custom_css():
             font-weight: 500;
         }
 
-        /* Force Sidebar Image Centering */
+        /* 側邊欄 Logo 居中排版 */
         [data-testid="stSidebar"] [data-testid="stImage"] {
             display: flex !important;
             justify-content: center !important;
@@ -69,7 +71,7 @@ def inject_custom_css():
             display: block !important;
         }
 
-        /* Minimalist Single-Line Header */
+        /* 頂部簡約單行標題 */
         .trayzero-header {
             background: #FFFFFF;
             border-radius: 16px;
@@ -91,7 +93,7 @@ def inject_custom_css():
             white-space: nowrap !important;
         }
 
-        /* Clean Micro-Elevated Cards */
+        /* 乾淨微陰影卡片 */
         .clean-card {
             background: #FFFFFF;
             border-radius: 16px;
@@ -123,7 +125,7 @@ def inject_custom_css():
             line-height: 1.1;
         }
 
-        /* Directives & Action Cards */
+        /* 營運指引卡片 */
         .directive-card {
             border-radius: 14px;
             padding: 16px 20px;
@@ -153,7 +155,7 @@ def inject_custom_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. Database & Data Storage Layer
+# 2. 資料庫與檔案讀取模組
 # ==============================================================================
 def db_conn(): 
     return sqlite3.connect(DB_FILE)
@@ -200,28 +202,34 @@ def reset_db():
         conn.execute("DELETE FROM audit_logs")
 
 def load_master_data():
-    df_b = pd.read_csv(BRANCH_FILE) if os.path.exists(BRANCH_FILE) else pd.DataFrame(
-        columns=["name", "level", "district", "traffic", "avg_covers", "base_rice_g", "strategy"]
-    )
-    df_d = pd.read_csv(DISH_FILE) if os.path.exists(DISH_FILE) else pd.DataFrame(
-        columns=["dish_id", "name", "main_carb", "protein"]
-    )
+    """方案 A：直接讀取 GitHub 根目錄的 CSV，支援 UTF-8 編碼"""
+    if os.path.exists(BRANCH_FILE):
+        df_b = pd.read_csv(BRANCH_FILE, encoding="utf-8-sig")
+    else:
+        df_b = pd.DataFrame(columns=["name", "level", "district", "traffic", "avg_covers", "base_rice_g", "strategy"])
+
+    if os.path.exists(DISH_FILE):
+        df_d = pd.read_csv(DISH_FILE, encoding="utf-8-sig")
+    else:
+        df_d = pd.DataFrame(columns=["dish_id", "name", "main_carb", "protein"])
+
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI Inference Engine
+# 3. AI 模型推論引擎 (CLIP + YOLOS + Flan-T5)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    m_path = "./Fine-tuned_Model_files" if (os.path.exists("./Fine-tuned_Model_files") and any(os.scandir("./Fine-tuned_Model_files"))) else "hustvl/yolos-tiny"
+    m_path = os.path.join(BASE_DIR, "Fine-tuned_Model_files")
+    if not (os.path.exists(m_path) and any(os.scandir(m_path))):
+        m_path = "hustvl/yolos-tiny"
     
     proc = AutoImageProcessor.from_pretrained(m_path)
     det = AutoModelForObjectDetection.from_pretrained(m_path).to(dev)
     tok = AutoTokenizer.from_pretrained("google/flan-t5-base")
     gen = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base").to(dev)
     
-    # CLIP 語意分類管線
     clip_classifier = pipeline(
         "zero-shot-image-classification", 
         model="openai/clip-vit-base-patch32", 
@@ -292,28 +300,18 @@ def detect_tray(image, engine):
     return img_draw, items, ratio, primary, valid_food
 
 def auto_detect_dish_clip(image, candidate_dishes, engine):
-    """
-    透過 CLIP 深度視覺語意對照候選菜單
-    """
     if not candidate_dishes:
         return "未定義餐點 Undefined Dish", 0.0
     
-    # 建立英文提示標籤以最大化 CLIP 辨識精準度
-    enhanced_labels = []
-    for d in candidate_dishes:
-        clean = d.strip()
-        enhanced_labels.append(clean)
-        
+    clean_labels = [d.strip() for d in candidate_dishes]
     try:
-        results = engine["clip"](image, candidate_labels=enhanced_labels)
-        best_label = results[0]["label"]
-        best_score = results[0]["score"]
-        return best_label, best_score
+        results = engine["clip"](image, candidate_labels=clean_labels)
+        return results[0]["label"], results[0]["score"]
     except Exception:
         return candidate_dishes[0], 0.75
 
 # ==============================================================================
-# 4. Macro Advisory Synthesis Engine (Bi-lingual)
+# 4. 宏觀建議生成模組
 # ==============================================================================
 def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     if df.empty:
@@ -359,7 +357,7 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     return {"total": n, "avg_w": avg_w, "branch": t_branch, "dish": t_dish, "actions": actions, "memo": memo}
 
 # ==============================================================================
-# 5. UI Views & Component Rendering
+# 5. UI 渲染模組
 # ==============================================================================
 def render_header():
     st.markdown("""
@@ -370,7 +368,7 @@ def render_header():
 
 def render_mode1(df_b, df_d, engine):
     if df_b.empty or df_d.empty:
-        st.warning("⚠️ 門市或餐點清單為空！請先切換至「Mode 3」上傳 CSV。\n(Store or menu database is empty. Please navigate to 'Mode 3' to bulk upload CSV files.)")
+        st.warning("⚠️ 門市或餐點清單為空！請確認 GitHub 倉庫根目錄已上傳 master_branches.csv 與 master_dishes.csv，或至 Mode 3 進行上傳。\n(Store or menu database is empty. Please verify GitHub CSV files or upload via Mode 3.)")
         return
 
     c1, c2 = st.columns([1.1, 0.9])
@@ -406,19 +404,16 @@ def render_mode1(df_b, df_d, engine):
                 img_cap = Image.open(m_cam).convert("RGB")
                 should_run = True
         else:
-            # 圖片拖入直接自動執行（使用檔案內容 hash 確保每次新傳或重傳都必定觸發）
+            # 圖片拖入自動執行
             up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
             if up is not None:
                 img_bytes = up.getvalue()
                 current_file_hash = hash(img_bytes)
                 img_cap = Image.open(up).convert("RGB")
-                
-                # 如果是新上傳或更換的照片，立刻自動觸發推論
                 if current_file_hash != st.session_state.get("active_upload_hash"):
                     st.session_state["active_upload_hash"] = current_file_hash
                     should_run = True
 
-        # 核心推論管線 (只要有圖片且應執行，就一定會刷新右側看板)
         if img_cap is not None and should_run:
             with st.spinner("🚀 AI 正在分析餐盤 (YOLOS 邊界框偵測 + CLIP 菜品語義辨識)..."):
                 anno_img, items, ratio, primary_cat, is_food = detect_tray(img_cap, engine)
@@ -504,7 +499,6 @@ def render_mode2(df_b, df_d, engine):
         if sel_d != "ALL": 
             df_filtered = df_filtered[df_filtered["dish_name"] == sel_d]
 
-    # KPI Statistics
     n = len(df_filtered)
     avg_w = df_filtered["waste_ratio"].mean() if n > 0 else 0.0
     tot_hkd = df_filtered["cost_waste_hkd"].sum() if n > 0 else 0.0
@@ -559,7 +553,7 @@ def render_mode2(df_b, df_d, engine):
         st.markdown("##### 📋 當前維度流水表 (Active Audit Records)")
         st.dataframe(df_filtered, use_container_width=True)
         
-        csv_data = df_filtered.to_csv(index=False).encode("utf-8")
+        csv_data = df_filtered.to_csv(index=False).encode("utf-8-sig")
         st.download_button(
             label="📥 匯出當前維度數據 (Export Active CSV)",
             data=csv_data,
@@ -578,10 +572,10 @@ def render_mode3(df_b, df_d):
         up_b = st.file_uploader("上傳分店 CSV (Upload Store CSV - Overwrites)", type=["csv"], key="up_b")
         if up_b:
             try:
-                new_df_b = pd.read_csv(up_b)
+                new_df_b = pd.read_csv(up_b, encoding="utf-8-sig")
                 req_b = {"name", "level", "district", "traffic", "avg_covers", "base_rice_g", "strategy"}
                 if req_b.issubset(new_df_b.columns):
-                    new_df_b.to_csv(BRANCH_FILE, index=False)
+                    new_df_b.to_csv(BRANCH_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"🎉 成功更新 {len(new_df_b)} 間分店！(Successfully updated {len(new_df_b)} branches!)")
                     st.rerun()
                 else: 
@@ -592,7 +586,7 @@ def render_mode3(df_b, df_d):
         st.markdown("#### 線上手動編輯 (Live Branch Editor)")
         edit_b = st.data_editor(df_b, num_rows="dynamic", use_container_width=True, key="ed_b")
         if st.button("💾 儲存分店手動修改 (Save Branch Directory)", type="primary"):
-            edit_b.to_csv(BRANCH_FILE, index=False)
+            edit_b.to_csv(BRANCH_FILE, index=False, encoding="utf-8-sig")
             st.success("✅ 分店清單已成功儲存！(Branch directory saved successfully!)")
             st.rerun()
 
@@ -624,7 +618,7 @@ def render_mode3(df_b, df_d):
                     "protein": new_protein if new_protein else "肉醬"
                 }])
                 df_updated = pd.concat([df_d, new_row], ignore_index=True).drop_duplicates(subset=["dish_id"], keep="last")
-                df_updated.to_csv(DISH_FILE, index=False)
+                df_updated.to_csv(DISH_FILE, index=False, encoding="utf-8-sig")
                 st.success(f"🎉 成功建立新品項【{new_dish_name}】特徵！AI 即時辨識已生效。(New product registered successfully!)")
                 st.rerun()
 
@@ -633,10 +627,10 @@ def render_mode3(df_b, df_d):
         up_d = st.file_uploader("上傳餐點 CSV (Upload Menu CSV - Overwrites)", type=["csv"], key="up_d")
         if up_d:
             try:
-                new_df_d = pd.read_csv(up_d)
+                new_df_d = pd.read_csv(up_d, encoding="utf-8-sig")
                 req_d = {"dish_id", "name", "main_carb", "protein"}
                 if req_d.issubset(new_df_d.columns):
-                    new_df_d.to_csv(DISH_FILE, index=False)
+                    new_df_d.to_csv(DISH_FILE, index=False, encoding="utf-8-sig")
                     st.success(f"🎉 成功更新 {len(new_df_d)} 項餐點！(Successfully updated {len(new_df_d)} dishes!)")
                     st.rerun()
                 else: 
@@ -647,12 +641,12 @@ def render_mode3(df_b, df_d):
         st.markdown("#### 線上手動編輯 (Live Menu Editor)")
         edit_d = st.data_editor(df_d, num_rows="dynamic", use_container_width=True, key="ed_d")
         if st.button("💾 儲存餐點手動修改 (Save Menu Directory)", type="secondary"):
-            edit_d.to_csv(DISH_FILE, index=False)
+            edit_d.to_csv(DISH_FILE, index=False, encoding="utf-8-sig")
             st.success("✅ 餐點清單已成功儲存！(Menu directory saved successfully!)")
             st.rerun()
 
 # ==============================================================================
-# 6. Main Execution Pipeline
+# 6. 主程式進入點 (Main Entry Point)
 # ==============================================================================
 def main():
     st.set_page_config(
@@ -670,12 +664,12 @@ def main():
 
     render_header()
 
-    # 側邊欄 Logo：透過 columns + CSS 強制絕對水平居中
-    logo_path = "CDC_810.png" if os.path.exists("CDC_810.png") else ("CDC_810.jpg" if os.path.exists("CDC_810.jpg") else None)
-    if logo_path:
+    # 側邊欄 Logo：依序檢查 PNG / JPG 原生檔案並置中排版
+    logo_target = LOGO_FILE_PNG if os.path.exists(LOGO_FILE_PNG) else (LOGO_FILE_JPG if os.path.exists(LOGO_FILE_JPG) else None)
+    if logo_target:
         col_l1, col_l2, col_l3 = st.sidebar.columns([0.15, 0.7, 0.15])
         with col_l2:
-            st.image(logo_path, width=175)
+            st.image(logo_target, width=175)
     else:
         st.sidebar.warning("⚠️ 請上傳 CDC_810.png 至根目錄")
 
