@@ -15,11 +15,12 @@ from transformers import (
 )
 
 # ==============================================================================
-# 0. 全域路徑綁定（確保方案 A 穩定讀取 GitHub 根目錄檔案）
+# 0. 全局パス設定と定数
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRANCH_FILE = os.path.join(BASE_DIR, "master_branches.csv")
 DISH_FILE = os.path.join(BASE_DIR, "master_dishes.csv")
+SEED_AUDIT_FILE = os.path.join(BASE_DIR, "seed_audit_logs.csv")
 DB_FILE = os.path.join(BASE_DIR, "trayzero_audit.db")
 LOGO_FILE_PNG = os.path.join(BASE_DIR, "CDC_810.png")
 LOGO_FILE_JPG = os.path.join(BASE_DIR, "CDC_810.jpg")
@@ -31,7 +32,7 @@ FOOD_WHITELIST = {
 }
 
 # ==============================================================================
-# 1. Clean UI 樣式注入
+# 1. Clean UI スタイル定義
 # ==============================================================================
 def inject_custom_css():
     st.markdown("""
@@ -57,7 +58,7 @@ def inject_custom_css():
             font-weight: 500;
         }
 
-        /* 側邊欄 Logo 居中排版 */
+        /* サイドバーロゴの中央配置 */
         [data-testid="stSidebar"] [data-testid="stImage"] {
             display: flex !important;
             justify-content: center !important;
@@ -71,7 +72,7 @@ def inject_custom_css():
             display: block !important;
         }
 
-        /* 頂部簡約單行標題 */
+        /* トップヘッダー */
         .trayzero-header {
             background: #FFFFFF;
             border-radius: 16px;
@@ -93,7 +94,7 @@ def inject_custom_css():
             white-space: nowrap !important;
         }
 
-        /* 乾淨微陰影卡片 */
+        /* KPIカード */
         .clean-card {
             background: #FFFFFF;
             border-radius: 16px;
@@ -125,7 +126,7 @@ def inject_custom_css():
             line-height: 1.1;
         }
 
-        /* 營運指引卡片 */
+        /* 指示カード */
         .directive-card {
             border-radius: 14px;
             padding: 16px 20px;
@@ -151,11 +152,22 @@ def inject_custom_css():
             color: #475569;
             line-height: 1.6;
         }
+
+        /* レコード不在時の案内カード */
+        .empty-advisory-card {
+            background: #FFFFFF;
+            border-radius: 14px;
+            padding: 24px;
+            text-align: center;
+            border: 1px dashed #CBD5E1;
+            color: #64748B;
+            margin-bottom: 16px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. 資料庫與檔案讀取模組
+# 2. データベース層（シードデータの自動復元付き）
 # ==============================================================================
 def db_conn(): 
     return sqlite3.connect(DB_FILE)
@@ -180,6 +192,15 @@ def init_db():
         cols = [c[1] for c in conn.execute("PRAGMA table_info(audit_logs)").fetchall()]
         if "audit_date" not in cols: conn.execute("ALTER TABLE audit_logs ADD COLUMN audit_date TEXT")
         if "audit_month" not in cols: conn.execute("ALTER TABLE audit_logs ADD COLUMN audit_month TEXT")
+        
+        # リブート時にDBが空の場合、GitHubのseed_audit_logs.csvから自動投入
+        row_count = conn.execute("SELECT COUNT(*) FROM audit_logs").fetchone()[0]
+        if row_count == 0 and os.path.exists(SEED_AUDIT_FILE):
+            try:
+                seed_df = pd.read_csv(SEED_AUDIT_FILE, encoding="utf-8-sig")
+                seed_df.to_sql("audit_logs", conn, if_exists="append", index=False)
+            except Exception:
+                pass
 
 def save_record(r):
     with db_conn() as conn:
@@ -192,6 +213,13 @@ def save_record(r):
             r["timestamp"], r["audit_date"], r["audit_month"], r["branch_name"], r["branch_level"],
             r["dish_name"], r["primary_waste"], r["waste_ratio"], r["cost_waste_hkd"], r["co2_emission_kg"]
         ))
+        
+    # 最新ログをseed_audit_logs.csvにも書き出し（次回リブート時の保全用）
+    try:
+        current_df = get_records()
+        current_df.to_csv(SEED_AUDIT_FILE, index=False, encoding="utf-8-sig")
+    except Exception:
+        pass
 
 def get_records():
     with db_conn() as conn: 
@@ -200,9 +228,13 @@ def get_records():
 def reset_db():
     with db_conn() as conn: 
         conn.execute("DELETE FROM audit_logs")
+    if os.path.exists(SEED_AUDIT_FILE):
+        try:
+            os.remove(SEED_AUDIT_FILE)
+        except Exception:
+            pass
 
 def load_master_data():
-    """方案 A：直接讀取 GitHub 根目錄的 CSV，支援 UTF-8 編碼"""
     if os.path.exists(BRANCH_FILE):
         df_b = pd.read_csv(BRANCH_FILE, encoding="utf-8-sig")
     else:
@@ -216,7 +248,7 @@ def load_master_data():
     return df_b, df_d
 
 # ==============================================================================
-# 3. AI 模型推論引擎 (CLIP + YOLOS + Flan-T5)
+# 3. AI 推論エンジン (CLIP + YOLOS + Flan-T5)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
@@ -311,20 +343,18 @@ def auto_detect_dish_clip(image, candidate_dishes, engine):
         return candidate_dishes[0], 0.75
 
 # ==============================================================================
-# 4. 宏觀建議生成模組
+# 4. アドバイザリー生成モジュール
 # ==============================================================================
 def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     if df.empty:
-        n, avg_w, loss, co2 = 0, 0.0, 0.0, 0.0
-        t_branch = branch_sel if branch_sel != "ALL" else "全港分店 All Branches"
-        t_dish = dish_sel if dish_sel != "ALL" else "全部餐點 All Menu Items"
-    else:
-        n = len(df)
-        avg_w = df["waste_ratio"].mean()
-        loss = df["cost_waste_hkd"].sum()
-        co2 = df["co2_emission_kg"].sum()
-        t_branch = branch_sel if branch_sel != "ALL" else df.groupby("branch_name")["waste_ratio"].mean().idxmax()
-        t_dish = dish_sel if dish_sel != "ALL" else df.groupby("dish_name")["waste_ratio"].mean().idxmax()
+        return None  # レコードが空の場合はNoneを返して生成しない
+
+    n = len(df)
+    avg_w = df["waste_ratio"].mean()
+    loss = df["cost_waste_hkd"].sum()
+    co2 = df["co2_emission_kg"].sum()
+    t_branch = branch_sel if branch_sel != "ALL" else df.groupby("branch_name")["waste_ratio"].mean().idxmax()
+    t_dish = dish_sel if dish_sel != "ALL" else df.groupby("dish_name")["waste_ratio"].mean().idxmax()
 
     actions = [
         {
@@ -357,7 +387,7 @@ def get_advisory(df, scope_type, branch_sel, dish_sel, engine):
     return {"total": n, "avg_w": avg_w, "branch": t_branch, "dish": t_dish, "actions": actions, "memo": memo}
 
 # ==============================================================================
-# 5. UI 渲染模組
+# 5. UI 表示モジュール
 # ==============================================================================
 def render_header():
     st.markdown("""
@@ -368,7 +398,7 @@ def render_header():
 
 def render_mode1(df_b, df_d, engine):
     if df_b.empty or df_d.empty:
-        st.warning("⚠️ 門市或餐點清單為空！請確認 GitHub 倉庫根目錄已上傳 master_branches.csv 與 master_dishes.csv，或至 Mode 3 進行上傳。\n(Store or menu database is empty. Please verify GitHub CSV files or upload via Mode 3.)")
+        st.warning("⚠️ 門市或餐點清單為空！請確認 GitHub 倉庫根目錄已上傳 master_branches.csv 與 master_dishes.csv。\n(Store or menu database is empty. Please verify GitHub CSV files.)")
         return
 
     c1, c2 = st.columns([1.1, 0.9])
@@ -404,7 +434,6 @@ def render_mode1(df_b, df_d, engine):
                 img_cap = Image.open(m_cam).convert("RGB")
                 should_run = True
         else:
-            # 圖片拖入自動執行
             up = st.file_uploader("上傳餐盤相片 (Upload Tray Image)", type=["jpg", "png", "jpeg"], key="tray_file_uploader")
             if up is not None:
                 img_bytes = up.getvalue()
@@ -511,35 +540,54 @@ def render_mode2(df_b, df_d, engine):
     k4.markdown(f'<div class="clean-card"><div class="clean-label">累計碳排放 GHG Emissions</div><div class="clean-val" style="color:#3B82F6">{tot_co2:.2f} <span style="font-size:0.85rem;color:#94A3B8">kg</span></div><div class="clean-sub">Scope 3 ESG Metric</div></div>', unsafe_allow_html=True)
 
     st.markdown("---")
-    scope = st.radio("覆盤時限 (Advisory Scope)", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
-    scope_code = "DAILY" if "日度" in scope else "MONTHLY"
-    date_col = "audit_date" if scope_code == "DAILY" else "audit_month"
     
-    dates = df_filtered[date_col].dropna().unique().tolist() if not df_filtered.empty else [datetime.date.today().strftime("%Y-%m-%d" if scope_code=="DAILY" else "%Y-%m")]
-    s_date = st.selectbox(f"選擇審計{'日期' if scope_code=='DAILY' else '月份'} (Select Audit {'Date' if scope_code=='DAILY' else 'Month'})", dates)
-    df_scope = df_filtered[df_filtered[date_col] == s_date] if not df_filtered.empty else pd.DataFrame()
-
-    with st.spinner("AI 正在分析生成營運指引... (Generating executive recommendations...)"):
-        adv = get_advisory(df_scope, scope_code, sel_b, sel_d, engine)
-
-    col_a1, col_a2 = st.columns([1, 2])
-    with col_a1:
+    # 選択されたフィルターにおいてレコードが0件の場合は、アドバイザリーを非表示にする
+    if n == 0:
         st.markdown(f"""
-        <div class="clean-card">
-            <div class="clean-label">當期指標摘要 (Scope Summary)</div>
-            <div style="font-size:0.88rem;color:#334155;line-height:1.8;margin-top:8px;">
-                • 審計盤數 Audited Trays: <b>{adv['total']} 盤</b><br>
-                • 殘食率 Waste Ratio: <b style="color:#EF4444">{adv['avg_w']:.1f}%</b><br>
-                • 目標門市 Target Branch: <b>{adv['branch']}</b><br>
-                • 目標餐點 Target Dish: <b>{adv['dish']}</b>
-            </div>
+        <div class="empty-advisory-card">
+            <h4>📭 該維度尚無審計數據 (No Audit Records in This Dimension)</h4>
+            <p>目前選擇的門市【{sel_b if sel_b != 'ALL' else '全部分店'}】與餐點【{sel_d if sel_d != 'ALL' else '全部品項'}】暫無過盤記錄。<br>
+            系統不會產生推測性建議。請至 Mode 1 進行實體餐盤掃描以觸發智能分析。</p>
         </div>
         """, unsafe_allow_html=True)
-    with col_a2:
-        for a in adv["actions"]:
-            st.markdown(f'<div class="directive-card {a["type"]}"><div class="directive-title">{a["role"]}</div><div class="directive-body">{a["text"]}</div></div>', unsafe_allow_html=True)
-        with st.expander("📝 檢視 AI 總監決策備忘錄 (View AI Executive Memo)", expanded=True):
-            st.write(adv["memo"])
+    else:
+        st.markdown("#### 🧭 大家樂總部營運指導中心 (Executive Advisory Hub)")
+        scope = st.radio("覆盤時限 (Advisory Scope)", ["📅 日度營運覆盤建議 (Daily Operational Review)", "🗓️ 月度戰略採購建議 (Monthly Strategic Advisory)"], horizontal=True)
+        scope_code = "DAILY" if "日度" in scope else "MONTHLY"
+        date_col = "audit_date" if scope_code == "DAILY" else "audit_month"
+        
+        dates = df_filtered[date_col].dropna().unique().tolist()
+        if not dates:
+            dates = [datetime.date.today().strftime("%Y-%m-%d" if scope_code=="DAILY" else "%Y-%m")]
+            
+        s_date = st.selectbox(f"選擇審計{'日期' if scope_code=='DAILY' else '月份'} (Select Audit {'Date' if scope_code=='DAILY' else 'Month'})", dates)
+        df_scope = df_filtered[df_filtered[date_col] == s_date]
+
+        if not df_scope.empty:
+            with st.spinner("AI 正在分析生成營運指引... (Generating executive recommendations...)"):
+                adv = get_advisory(df_scope, scope_code, sel_b, sel_d, engine)
+
+            if adv:
+                col_a1, col_a2 = st.columns([1, 2])
+                with col_a1:
+                    st.markdown(f"""
+                    <div class="clean-card">
+                        <div class="clean-label">當期指標摘要 (Scope Summary)</div>
+                        <div style="font-size:0.88rem;color:#334155;line-height:1.8;margin-top:8px;">
+                            • 審計盤數 Audited Trays: <b>{adv['total']} 盤</b><br>
+                            • 殘食率 Waste Ratio: <b style="color:#EF4444">{adv['avg_w']:.1f}%</b><br>
+                            • 目標門市 Target Branch: <b>{adv['branch']}</b><br>
+                            • 目標餐點 Target Dish: <b>{adv['dish']}</b>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_a2:
+                    for a in adv["actions"]:
+                        st.markdown(f'<div class="directive-card {a["type"]}"><div class="directive-title">{a["role"]}</div><div class="directive-body">{a["text"]}</div></div>', unsafe_allow_html=True)
+                    with st.expander("📝 檢視 AI 總監決策備忘錄 (View AI Executive Memo)", expanded=True):
+                        st.write(adv["memo"])
+        else:
+            st.info("💡 該特定日期/月份內無記錄。")
 
     st.markdown("---")
     if not df_filtered.empty:
@@ -560,8 +608,6 @@ def render_mode2(df_b, df_d, engine):
             file_name=f"trayzero_export_{datetime.date.today()}.csv",
             mime="text/csv"
         )
-    else:
-        st.info("💡 目前所選維度尚無過盤紀錄。(No audit records found for the selected dimensions.)")
 
 def render_mode3(df_b, df_d):
     st.markdown("### ⚙️ 基礎資料管理 (Master Data Management & Bulk Upload)")
@@ -646,7 +692,7 @@ def render_mode3(df_b, df_d):
             st.rerun()
 
 # ==============================================================================
-# 6. 主程式進入點 (Main Entry Point)
+# 6. メイン実行パイプライン
 # ==============================================================================
 def main():
     st.set_page_config(
@@ -664,7 +710,7 @@ def main():
 
     render_header()
 
-    # 側邊欄 Logo：依序檢查 PNG / JPG 原生檔案並置中排版
+    # サイドバーロゴの中央表示
     logo_target = LOGO_FILE_PNG if os.path.exists(LOGO_FILE_PNG) else (LOGO_FILE_JPG if os.path.exists(LOGO_FILE_JPG) else None)
     if logo_target:
         col_l1, col_l2, col_l3 = st.sidebar.columns([0.15, 0.7, 0.15])
