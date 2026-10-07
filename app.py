@@ -3,7 +3,6 @@ import torch
 from transformers import (
     AutoImageProcessor, 
     AutoModelForImageClassification,
-    AutoModelForVision2Seq,
     AutoTokenizer,
     AutoModelForSeq2SeqLM
 )
@@ -37,7 +36,7 @@ def load_specialized_models():
     )
     p1_model.eval()
 
-    # 2. Pipeline 2: 影像分割與檢測模型
+    # 2. Pipeline 2: 影像分割與檢測處理器
     p2_model_id = "facebook/mask2former-swin-base-coco-panoptic"
     p2_processor = AutoImageProcessor.from_pretrained(p2_model_id)
     
@@ -79,10 +78,8 @@ if uploaded_file is not None:
                     inputs1 = p1_proc(images=image, return_tensors="pt")
                     with torch.no_grad():
                         outputs1 = p1_mod(**inputs1)
-                        # 透過 Sigmoid 計算 0% ~ 100% 的殘食率
                         raw_ratio = torch.sigmoid(outputs1.logits).item()
                         
-                    # 智慧校正：若影像像素特徵顯示為完整餐盤（數值過低或過高時的邊界控制）
                     waste_ratio = round(raw_ratio * 100, 2)
                     if waste_ratio < 5.0:
                         waste_ratio = 0.0
@@ -104,7 +101,6 @@ if uploaded_file is not None:
                         summary_ids = p3_mod.generate(inputs3.input_ids, max_length=100, min_length=30, do_sample=False)
                     advisory_text = p3_tok.decode(summary_ids[0], skip_special_tokens=True)
                     
-                    # 確保生成的顧問報告流暢且具備商業價值
                     if len(advisory_text) < 15:
                         if waste_ratio == 0.0:
                             advisory_text = (
