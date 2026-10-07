@@ -2,7 +2,7 @@ streamlit
 torch
 torchvision
 transformers
-PIL
+Pillow
 requests
 sentencepiece
 protobuf
