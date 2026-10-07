@@ -2,6 +2,7 @@ streamlit
 torch
 torchvision
 transformers
+timm
 Pillow
 requests
 sentencepiece
