@@ -44,7 +44,6 @@ if uploaded_file is not None:
     
     with col1:
         image = Image.open(uploaded_file).convert("RGB")
-        # 修正新版 Streamlit 的寬度參數
         st.image(image, caption="已上傳的大家樂餐盤影像", width="stretch")
         
     with col2:
@@ -59,20 +58,24 @@ if uploaded_file is not None:
                         outputs = model(**inputs)
                     
                     target_sizes = torch.tensor([image.size[::-1]])
+                    
+                    # 修正：移除不支援的 box_threshold 參數，改用標準後處理
                     results = processor.post_process_grounded_object_detection(
                         outputs,
                         inputs.input_ids,
-                        box_threshold=0.35,
-                        text_threshold=0.25,
                         target_sizes=target_sizes
                     )[0]
                     
                     boxes = results["boxes"]
-                    labels_detected = results["labels"]
+                    scores = results["scores"]
                     
-                    has_leftover = any(lbl in ["leftover food", "rice", "meat"] for lbl in labels_detected)
+                    # 過濾低於 0.35 信心分數的檢測框
+                    valid_indices = scores > 0.35
+                    filtered_boxes = boxes[valid_indices]
                     
-                    if len(boxes) <= 2 and not has_leftover:
+                    has_leftover = len(filtered_boxes) > 2
+                    
+                    if not has_leftover:
                         waste_ratio = 0.0
                         proteins_left, carbs_left, veggies_left = 0.0, 0.0, 0.0
                         advisory_text = (
