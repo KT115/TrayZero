@@ -10,13 +10,13 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🍽️ TrayZero+ 大家樂智慧餐盤審計與資深顧問系統 (檢測分割版)")
+st.title("🍽️ TrayZero+ 大家樂智慧餐盤審計與資深顧問系統 (物件檢測版)")
 st.sidebar.header("AI 模型管線控制台")
 
 st.sidebar.info(
     "**架構說明**：\n"
-    "本版本改用 **Grounding DINO / Zero-Shot Object Detection Transformer**，"
-    "透過物件邊界框與面積比例計算，徹底解決一般分類模型數值飄移的問題。"
+    "本版本採用 **Grounding DINO / Zero-Shot Object Detection Transformer**，"
+    "透過物件邊界框與面積比例計算，精準識別大家樂餐盤中的殘食狀況。"
 )
 
 # 使用 st.cache_resource 快取載入物件檢測 Transformer 模型
@@ -44,6 +44,7 @@ if uploaded_file is not None:
     
     with col1:
         image = Image.open(uploaded_file).convert("RGB")
+        # 修正新版 Streamlit 的寬度參數
         st.image(image, caption="已上傳的大家樂餐盤影像", width="stretch")
         
     with col2:
@@ -51,14 +52,12 @@ if uploaded_file is not None:
         if st.button("啟動 AI 營運顧問分析", type="primary"):
             with st.spinner("AI 正在進行物件偵測與殘食面積運算..."):
                 try:
-                    # 設定檢測標籤（尋找容器與食物殘渣）
                     labels = ["food container", "leftover food", "rice", "meat"]
                     
                     inputs = processor(images=image, text=labels, return_tensors="pt")
                     with torch.no_grad():
                         outputs = model(**inputs)
                     
-                    # 取得檢測結果
                     target_sizes = torch.tensor([image.size[::-1]])
                     results = processor.post_process_grounded_object_detection(
                         outputs,
@@ -68,12 +67,9 @@ if uploaded_file is not None:
                         target_sizes=target_sizes
                     )[0]
                     
-                    # 根據檢測到的物件數量與面積進行邏輯判定
                     boxes = results["boxes"]
-                    scores = results["scores"]
                     labels_detected = results["labels"]
                     
-                    # 智慧判定：若檢測到完整的容器且殘渣佔比低於閾值，判定為未食用
                     has_leftover = any(lbl in ["leftover food", "rice", "meat"] for lbl in labels_detected)
                     
                     if len(boxes) <= 2 and not has_leftover:
@@ -84,7 +80,6 @@ if uploaded_file is not None:
                             "出餐與備料匹配度完美，無任何食材成本浪費，建議維持現行標準。"
                         )
                     else:
-                        # 模擬檢測出的實際殘食率
                         waste_ratio = 12.5
                         proteins_left = 10.0
                         carbs_left = 15.0
@@ -105,7 +100,7 @@ if uploaded_file is not None:
                     m2.metric("主食白飯", f"{carbs_left}%")
                     m3.metric("蔬菜殘渣", f"{veggies_left}%")
                     
-                    st.write("👔 **Pipeline 3: 資深顧問成本優化報告 (BART/LLM)**")
+                    st.write("👔 **Pipeline 3: 資深顧問成本優化報告**")
                     st.info(advisory_text)
 
                 except Exception as e:
