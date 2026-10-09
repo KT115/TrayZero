@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 # ==============================================================================
-# 1. Global Paths & Fast-Casual POS Enterprise CSS Theme
+# 1. Global Paths & Fast-Casual POS Enterprise CSS Theme (高對比繁體中文主題)
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRANCH_FILE = os.path.join(BASE_DIR, "master_branches.csv")
@@ -43,6 +43,7 @@ DEFAULT_BASE_GDRIVE_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSloK
 def inject_safe_css():
     st.markdown("""
     <style>
+        /* 強制全局高對比淺色基調，防止深色模式導致文字隱形 */
         :root {
             --cdc-red: #DC2626 !important;
             --cdc-amber: #D97706 !important;
@@ -50,38 +51,42 @@ def inject_safe_css():
             --background-color: #F8FAFC !important;
             --secondary-background-color: #FFFFFF !important;
         }
-        .stApp {
+        .stApp, [data-testid="stAppViewContainer"] {
             background-color: #F8FAFC !important;
             color: #0F172A !important;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "PingFang HK", "Microsoft JhengHei", Arial, sans-serif !important;
         }
         .main .block-container {
             padding-top: 1.2rem !important;
             padding-bottom: 3rem !important;
             color: #0F172A !important;
         }
-        .pos-header-banner {
-            background: linear-gradient(135deg, #C2301A 0%, #D95D1A 48%, #D87B18 100%) !important;
-            border-radius: 14px !important;
-            padding: 16px 24px !important;
-            margin-bottom: 22px !important;
-            box-shadow: 0 4px 14px rgba(194, 48, 26, 0.22) !important;
-            border: 1px solid rgba(255, 255, 255, 0.15) !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-        .pos-header-title {
-            color: #FFFFFF !important;
-            font-size: 1.45rem !important;
-            font-weight: 900 !important;
-            margin: 0 !important;
-            letter-spacing: 0.02em !important;
-            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
-        }
+        
+        /* 側邊欄高對比防隱形樣式 */
         [data-testid="stSidebar"] {
             background-color: #FFFFFF !important;
-            border-right: 1.5px solid #E2E8F0 !important;
+            border-right: 1.5px solid #CBD5E1 !important;
             padding-top: 1rem !important;
+        }
+        [data-testid="stSidebar"] * {
+            color: #0F172A !important;
+        }
+        [data-testid="stSidebar"] p, 
+        [data-testid="stSidebar"] span, 
+        [data-testid="stSidebar"] label, 
+        [data-testid="stSidebar"] div, 
+        [data-testid="stSidebar"] h1, 
+        [data-testid="stSidebar"] h2, 
+        [data-testid="stSidebar"] h3, 
+        [data-testid="stSidebar"] h4, 
+        [data-testid="stSidebar"] h5, 
+        [data-testid="stSidebar"] h6 {
+            color: #0F172A !important;
+            font-weight: 600 !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+            color: #0F172A !important;
+            font-weight: 600 !important;
         }
         [data-testid="stSidebar"] [data-testid="stImage"] {
             display: flex !important;
@@ -101,15 +106,47 @@ def inject_safe_css():
             height: auto !important;
             object-fit: contain !important;
         }
-        .pos-card {
-            background: #FFFFFF !important;
-            border: 1px solid #E2E8F0 !important;
-            border-radius: 12px !important;
-            padding: 18px 20px !important;
-            margin-bottom: 16px !important;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-            color: #0F172A !important;
+
+        /* 標題橫幅 (大家樂經典紅琥珀漸層) */
+        .pos-header-banner {
+            background: linear-gradient(135deg, #C2301A 0%, #D95D1A 48%, #D87B18 100%) !important;
+            border-radius: 14px !important;
+            padding: 16px 24px !important;
+            margin-bottom: 22px !important;
+            box-shadow: 0 4px 14px rgba(194, 48, 26, 0.22) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
         }
+        .pos-header-title {
+            color: #FFFFFF !important;
+            font-size: 1.45rem !important;
+            font-weight: 900 !important;
+            margin: 0 !important;
+            letter-spacing: 0.02em !important;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
+        }
+
+        /* 確保所有輸入框、下拉選單背景為白、文字為深黑 */
+        [data-testid="stSelectbox"] div,
+        [data-testid="stTextInput"] div,
+        [data-testid="stSelectbox"] label,
+        [data-testid="stTextInput"] label,
+        [data-testid="stRadio"] label,
+        input, select, textarea {
+            color: #0F172A !important;
+            font-weight: 600 !important;
+        }
+        div[data-baseweb="select"] > div {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+            border: 1.5px solid #CBD5E1 !important;
+        }
+        div[data-baseweb="input"] > div {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+            border: 1.5px solid #CBD5E1 !important;
+        }
+
+        /* 指標卡片 */
         .metric-banner {
             background: #FFFFFF !important;
             border-left: 5px solid #DC2626 !important;
@@ -117,6 +154,9 @@ def inject_safe_css():
             padding: 14px 18px !important;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
             margin-bottom: 14px !important;
+            border-top: 1px solid #E2E8F0 !important;
+            border-right: 1px solid #E2E8F0 !important;
+            border-bottom: 1px solid #E2E8F0 !important;
         }
         .metric-banner-val {
             font-size: 1.7rem !important;
@@ -127,50 +167,22 @@ def inject_safe_css():
         .metric-banner-lbl {
             font-size: 0.82rem !important;
             font-weight: 700 !important;
-            color: #64748B !important;
+            color: #475569 !important;
             text-transform: uppercase !important;
             letter-spacing: 0.05em !important;
         }
-        .pos-badge {
-            display: inline-block !important;
-            padding: 4px 10px !important;
-            border-radius: 6px !important;
-            font-size: 0.78rem !important;
-            font-weight: 700 !important;
-        }
-        .pos-badge-green { background: #ECFDF5 !important; color: #047857 !important; border: 1px solid #A7F3D0 !important; }
-        .pos-badge-amber { background: #FFFBEB !important; color: #B45309 !important; border: 1px solid #FDE68A !important; }
-        .pos-badge-red { background: #FEF2F2 !important; color: #B91C1C !important; border: 1px solid #FECACA !important; }
-        .pos-badge-blue { background: #EFF6FF !important; color: #1D4ED8 !important; border: 1px solid #BFDBFE !important; }
+
+        /* 獎勵優惠券視覺卡 */
         .voucher-box {
             background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%) !important;
             border: 2px dashed #D97706 !important;
             border-radius: 12px !important;
             padding: 14px 18px !important;
-            margin: 12px 0 !important;
+            margin: 14px 0 !important;
             color: #78350F !important;
         }
-        .dish-pill {
-            display: inline-block !important;
-            padding: 6px 14px !important;
-            margin: 4px !important;
-            background: #F1F5F9 !important;
-            border: 1.5px solid #CBD5E1 !important;
-            border-radius: 20px !important;
-            font-size: 0.88rem !important;
-            font-weight: 600 !important;
-            color: #1E293B !important;
-            cursor: pointer !important;
-        }
-        .dish-pill:hover {
-            background: #E2E8F0 !important;
-            border-color: #94A3B8 !important;
-        }
-        .dish-pill.active {
-            background: #DC2626 !important;
-            color: #FFFFFF !important;
-            border-color: #B91C1C !important;
-        }
+
+        /* 分頁標籤 */
         div[data-baseweb="tab-list"] {
             gap: 8px !important;
             border-bottom: 2px solid #E2E8F0 !important;
@@ -190,7 +202,7 @@ def inject_safe_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 2. Database Connection & Table Initialization
+# 2. Database Connection & Table Initialization (資料庫初始化)
 # ==============================================================================
 def db_conn(): 
     return sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -306,13 +318,13 @@ def init_db():
                 ))
             conn.commit()
         except Exception as e:
-            print(f"Error loading seed logs: {e}")
+            print(f"載入種子數據異常: {e}")
 
     conn.commit()
     conn.close()
 
 # ==============================================================================
-# 3. Dynamic Cloud & Master Sync Handlers
+# 3. Dynamic Cloud & Master Sync Handlers (門市與菜單管理)
 # ==============================================================================
 def get_cloud_urls():
     conn = db_conn()
@@ -379,7 +391,7 @@ def get_live_branches():
             {"name": "中環威靈頓街店", "level": "Level A (商業核心區 / CBD)", "district": "中西區", "traffic": "白領上班族為主，午市尖峰翻檯率極高", "avg_covers": 1200, "base_rice_g": 240},
             {"name": "沙田新城市廣場店", "level": "Level B (住宅商場 / Residential)", "district": "沙田區", "traffic": "家庭客、長者與週末休閒客群", "avg_covers": 1500, "base_rice_g": 260},
             {"name": "香港科技大學店 (HKUST)", "level": "Level C (校園與青年區 / Campus)", "district": "西貢區", "traffic": "學生、教職員，運動量及食量顯著較大", "avg_covers": 1800, "base_rice_g": 280},
-            {"name": "將軍澳 Popcorn 店", "level": "Level B (住宅商場 / Residential)", "district": "沙田區", "traffic": "家庭客及換乘鐵路客流", "avg_covers": 1400, "base_rice_g": 260}
+            {"name": "將軍澳 Popcorn 店", "level": "Level B (住宅商場 / Residential)", "district": "西貢區", "traffic": "家庭客及換乘鐵路客流", "avg_covers": 1400, "base_rice_g": 260}
         ])
     return df
 
@@ -402,7 +414,7 @@ def save_live_rewards(df):
     conn.close()
 
 # ==============================================================================
-# 4. Reward Evaluator & Record Logger
+# 4. Reward Evaluator & Record Logger (獎勵計算與日誌儲存)
 # ==============================================================================
 def evaluate_customer_rewards(waste_ratio_pct):
     df_rew = get_live_rewards()
@@ -446,7 +458,7 @@ def get_records():
     return df
 
 # ==============================================================================
-# 5. AI Engine (載入今日微調之雙管線全新 Transformer 模型)
+# 5. AI Engine (載入今日新微調之雙管線 Transformer 模型)
 # ==============================================================================
 @st.cache_resource(show_spinner=False)
 def load_ai_engine():
@@ -548,7 +560,7 @@ def detect_tray(image, engine, selected_dish="", carb_type_from_csv=""):
 
     ratio = max(0.0, min(1.0, ratio))
 
-    # 🌟 6 級精細化 Grouping 分級標準
+    # 🌟 6 級精細化 Grouping 分級標準 (全繁體中文)
     if ratio >= 0.90:
         primary_cat = "完整未動餐點 (90-100% Untouched)"
         accent_color = "#DC2626"
@@ -576,9 +588,9 @@ def detect_tray(image, engine, selected_dish="", carb_type_from_csv=""):
     veg_ratio = max(0.0, min(1.0, ratio * 0.90))
 
     items = [
-        {"分類項目 Category": "主食 (Carb)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{carb_ratio*100:.1f}%"},
-        {"分類項目 Category": "蛋白質 (Protein)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{protein_ratio*100:.1f}%"},
-        {"分類項目 Category": "蔬菜配菜 (Vegetables)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{veg_ratio*100:.1f}%"},
+        {"分類項目 Category": "主食澱粉 (Carb - 白米飯/麵食)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{carb_ratio*100:.1f}%", "raw_ratio": carb_ratio},
+        {"分類項目 Category": "蛋白質肉類 (Protein - 焗豬扒/肉類)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{protein_ratio*100:.1f}%", "raw_ratio": protein_ratio},
+        {"分類項目 Category": "蔬菜配菜 (Vegetables - 醬汁/配菜)", "置信度 Confidence": f"{top_score:.1%}", "佔比 Coverage": f"{veg_ratio*100:.1f}%", "raw_ratio": veg_ratio},
     ]
 
     box = [int(width * 0.15), int(height * 0.15), int(width * 0.85), int(height * 0.85)]
@@ -600,7 +612,7 @@ def auto_detect_dish_clip(image, candidate_dishes, engine):
         return candidate_dishes[0], 0.75
 
 # ==============================================================================
-# 6. Member Profile Synthesis (Loyalty Engine)
+# 6. Member Profile Synthesis (Loyalty Engine - 會員閉環)
 # ==============================================================================
 def analyze_member_loyalty_profile(member_id, df_all):
     if not member_id or member_id == "STAFF" or df_all.empty:
@@ -655,15 +667,15 @@ def analyze_member_loyalty_profile(member_id, df_all):
     }
 
 # ==============================================================================
-# 7. Mode Renderers
+# 7. Mode Renderers (三大業務模式)
 # ==============================================================================
 def render_header():
     st.markdown("""
     <div class="pos-header-banner">
         <div>
             <h2 class="pos-header-title">🍽️ TrayZero+ | 大家樂智能餐盤廚餘審計與會員閉環系統</h2>
-            <div style="color: #FEF3C7; font-size: 0.85rem; font-weight: 600; margin-top: 4px;">
-                Café de Coral AI ESG & Smart Operations Engine · 双管线深度学习驱动
+            <div style="color: #FEF3C7; font-size: 0.88rem; font-weight: 700; margin-top: 4px;">
+                Café de Coral AI ESG & Smart Operations Engine · 雙管線深度學習驅動
             </div>
         </div>
     </div>
@@ -681,128 +693,164 @@ def render_mode1(engine, modules):
     dish_names = df_d["name"].tolist() if not df_d.empty else ["一哥焗豬扒飯 (Baked Pork Chop Rice)"]
 
     with col_k1:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        st.markdown("#### 1. 門市與會員身份辨識")
-        
-        sel_branch = st.selectbox("當前運行分店", branch_names, key="kiosk_branch")
-        member_id = st.text_input("Club 100 會員 QR Code / 手機號碼 (留空代表匿名訪客)", value="M882190", key="kiosk_member")
-        
-        st.markdown("---")
-        st.markdown("#### 2. 餐盤影像獲取")
-        input_method = st.radio("影像來源", ["測試圖片 / 拍照上傳", "即時相機拍攝"], horizontal=True)
-        
-        image = None
-        if input_method == "即時相機拍攝":
-            camera_file = st.camera_input("拍攝餐盤殘留")
-            if camera_file:
-                image = Image.open(camera_file)
-        else:
-            uploaded_file = st.file_uploader("上傳餐盤照片 (.jpg / .png)", type=["jpg", "jpeg", "png"])
-            if uploaded_file:
-                image = Image.open(uploaded_file)
+        with st.container(border=True):
+            st.markdown("#### 1. 門市與會員身份辨識")
+            sel_branch = st.selectbox("當前運行分店", branch_names, key="kiosk_branch")
+            member_id = st.text_input("Club 100 會員 QR Code / 手機號碼 (留空代表匿名訪客)", value="M882190", key="kiosk_member")
+
+        with st.container(border=True):
+            st.markdown("#### 2. 餐盤影像獲取 (即時自動審計)")
+            input_method = st.radio("影像來源", ["測試圖片 / 拍照上傳", "即時相機拍攝"], horizontal=True)
+            
+            image = None
+            if input_method == "即時相機拍攝":
+                camera_file = st.camera_input("拍攝餐盤殘留 (拍照後自動啟動審計)")
+                if camera_file:
+                    image = Image.open(camera_file)
             else:
-                image = Image.new("RGB", (224, 224), color=(235, 230, 220))
-                st.caption("💡 提示：目前使用系統內置預設餐盤圖片進行展示。")
+                uploaded_file = st.file_uploader("上傳餐盤照片 (.jpg / .png，上傳後自動執行審計)", type=["jpg", "jpeg", "png"])
+                if uploaded_file:
+                    image = Image.open(uploaded_file)
+                else:
+                    image = Image.new("RGB", (224, 224), color=(235, 230, 220))
+                    st.caption("💡 提示：目前使用系統內置預設餐盤圖片進行展示。上傳新照片後將自動執行審計。")
 
-        if image:
-            st.image(image, caption="待審計影像", use_container_width=True)
+            if image:
+                st.image(image, caption="待審計影像", use_container_width=True)
 
-        st.markdown("---")
-        st.markdown("#### 3. 菜式辨識")
-        auto_dish, dish_conf = auto_detect_dish_clip(image, dish_names, engine)
-        st.info(f"🔍 CLIP 智慧推薦菜式：**{auto_dish}** (信心度: {dish_conf:.1%})")
-        
-        sel_dish = st.selectbox("確認當前餐點菜式", dish_names, index=dish_names.index(auto_dish) if auto_dish in dish_names else 0)
-        
-        run_btn = st.button("🚀 執行 TrayZero+ 智能審計 (Run Audit)", type="primary", use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("#### 3. 菜式辨識與確認")
+            auto_dish, dish_conf = auto_detect_dish_clip(image, dish_names, engine)
+            st.info(f"🔍 CLIP 智慧推薦菜式：**{auto_dish}** (置信度: {dish_conf:.1%})")
+            sel_dish = st.selectbox("確認當前餐點菜式", dish_names, index=dish_names.index(auto_dish) if auto_dish in dish_names else 0)
+            
+            # 提供手動重新審計按鈕（非強制，上傳已有自動執行）
+            re_audit = st.button("🔄 重新執行審計 (Re-run Audit)", use_container_width=True)
 
     with col_k2:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        st.markdown("#### 4. 深度學習審計與即時回饋")
+        with st.container(border=True):
+            st.markdown("#### 4. 深度學習審計與即時回饋")
 
-        if run_btn and image:
-            with st.spinner("🤖 正在執行 Pipeline 1 (Swin) 與 Pipeline 2 (Flan-T5)..."):
-                annotated_img, items, ratio, primary_cat, is_food = detect_tray(image, engine, selected_dish=sel_dish)
+            # 🌟 核心升級：只要獲取到影像即自動執行，無須強制點擊按鈕
+            if image is not None:
+                with st.spinner("🤖 正在執行 Pipeline 1 (Swin) 與 Pipeline 2 (Flan-T5) 自動審計..."):
+                    annotated_img, items, ratio, primary_cat, is_food = detect_tray(image, engine, selected_dish=sel_dish)
+                    
+                    waste_pct = round(ratio * 100, 1)
+                    now = datetime.datetime.now()
+
+                    b_row = df_b[df_b["name"] == sel_branch]
+                    base_rice = float(b_row.iloc[0]["base_rice_g"]) if not b_row.empty else 250.0
+                    
+                    waste_weight = round((base_rice + 200.0) * (waste_pct / 100.0), 1)
+                    waste_cost = round(waste_weight * 0.042, 2)
+                    waste_carbon = round(waste_weight * 0.0025, 3)
+
+                    voucher_text, tier_name, tier_color = evaluate_customer_rewards(waste_pct)
+
+                    # Pipeline 2 智能生成後廚 SOP
+                    try:
+                        nlp_prompt = f"Generate kitchen SOP alert and customer incentive for Café de Coral: Dish: {sel_dish}, Waste: {waste_pct}%, Category: {primary_cat}. Action:"
+                        sop_gen = engine["nlp"](nlp_prompt, max_length=128)[0]["generated_text"]
+                        dynamic_sop_alert = sop_gen.strip()
+                    except Exception:
+                        dynamic_sop_alert = f"連續監測到【{sel_dish}】殘食率偏高 ({waste_pct}%)，建議廚房適度調整白飯與醬汁裝盤標準量。"
+
+                    save_record({
+                        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"), 
+                        "audit_date": now.strftime("%Y-%m-%d"),
+                        "branch_name": sel_branch, 
+                        "dish_name": sel_dish,
+                        "waste_ratio": waste_pct, 
+                        "waste_weight_g": waste_weight,
+                        "estimated_cost_hkd": waste_cost, 
+                        "carbon_kg": waste_carbon,
+                        "primary_waste": items[0]["分類項目 Category"], 
+                        "member_id": member_id,
+                        "voucher_awarded": voucher_text, 
+                        "dynamic_sop_alert": dynamic_sop_alert
+                    })
+
+                st.image(annotated_img, caption=f"視覺審計結果 (殘食率: {waste_pct}%)", use_container_width=True)
+
+                m_col1, m_col2, m_col3 = st.columns(3)
+                with m_col1:
+                    st.markdown(f"""
+                    <div class="metric-banner">
+                        <div class="metric-banner-lbl">殘食百分比</div>
+                        <div class="metric-banner-val">{waste_pct}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with m_col2:
+                    st.markdown(f"""
+                    <div class="metric-banner">
+                        <div class="metric-banner-lbl">估算浪費成本</div>
+                        <div class="metric-banner-val">HK${waste_cost}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with m_col3:
+                    st.markdown(f"""
+                    <div class="metric-banner">
+                        <div class="metric-banner-lbl">產生碳排放</div>
+                        <div class="metric-banner-val">{waste_carbon} kg</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.markdown(f"""
+                <div class="voucher-box">
+                    <h4 style="margin: 0 0 6px 0; color: #92400E; font-weight: 800;">🎉 Club 100 獎勵發放：{tier_name}</h4>
+                    <div style="font-size: 1.05rem; font-weight: 800; color: #B45309;">{voucher_text}</div>
+                    <div style="font-size: 0.82rem; margin-top: 5px; color: #78350F; font-weight: 600;">電子券已即時存入會員帳戶 ({member_id})，可於大家樂門市下次消費直接扣減。</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("##### 📋 Pipeline 2 生成之廚房 SOP 改進指令")
+                st.info(f"🔔 **後廚通知**：{dynamic_sop_alert}")
+
+                # 🌟 各大食材分項佔比：雙重高對比保證 (進度條 + 高對比 HTML 表格)
+                st.markdown("##### 🔍 各大食材分項佔比 (Macronutrient Breakdown)")
                 
-                waste_pct = round(ratio * 100, 1)
-                now = datetime.datetime.now()
+                c_carb, c_prot, c_veg = st.columns(3)
+                with c_carb:
+                    st.metric("🍚 主食澱粉 (Carb)", items[0]["佔比 Coverage"])
+                    st.progress(min(1.0, float(items[0]["raw_ratio"])))
+                with c_prot:
+                    st.metric("🥩 蛋白質肉類 (Protein)", items[1]["佔比 Coverage"])
+                    st.progress(min(1.0, float(items[1]["raw_ratio"])))
+                with c_veg:
+                    st.metric("🥦 蔬菜配菜 (Vegetables)", items[2]["佔比 Coverage"])
+                    st.progress(min(1.0, float(items[2]["raw_ratio"])))
 
-                b_row = df_b[df_b["name"] == sel_branch]
-                base_rice = float(b_row.iloc[0]["base_rice_g"]) if not b_row.empty else 250.0
-                
-                waste_weight = round((base_rice + 200.0) * (waste_pct / 100.0), 1)
-                waste_cost = round(waste_weight * 0.042, 2)
-                waste_carbon = round(waste_weight * 0.0025, 3)
-
-                voucher_text, tier_name, tier_color = evaluate_customer_rewards(waste_pct)
-
-                # Pipeline 2 呼叫
-                try:
-                    nlp_prompt = f"Generate kitchen SOP alert and customer incentive for Café de Coral: Dish: {sel_dish}, Waste: {waste_pct}%, Category: {primary_cat}. Action:"
-                    sop_gen = engine["nlp"](nlp_prompt, max_length=128)[0]["generated_text"]
-                    dynamic_sop_alert = sop_gen.strip()
-                except Exception:
-                    dynamic_sop_alert = f"連續監測到【{sel_dish}】殘食率偏高 ({waste_pct}%)，建議廚房適度調整白飯與醬汁裝盤標準量。"
-
-                save_record({
-                    "timestamp": now.strftime("%Y-%m-%d %H:%M:%S"), 
-                    "audit_date": now.strftime("%Y-%m-%d"),
-                    "branch_name": sel_branch, 
-                    "dish_name": sel_dish,
-                    "waste_ratio": waste_pct, 
-                    "waste_weight_g": waste_weight,
-                    "estimated_cost_hkd": waste_cost, 
-                    "carbon_kg": waste_carbon,
-                    "primary_waste": items[0]["分類項目 Category"], 
-                    "member_id": member_id,
-                    "voucher_awarded": voucher_text, 
-                    "dynamic_sop_alert": dynamic_sop_alert
-                })
-
-            st.image(annotated_img, caption=f"視覺審計結果 (殘食率: {waste_pct}%)", use_container_width=True)
-
-            m_col1, m_col2, m_col3 = st.columns(3)
-            with m_col1:
+                # 確保表格絕對清晰顯示
                 st.markdown(f"""
-                <div class="metric-banner">
-                    <div class="metric-banner-lbl">殘食百分比</div>
-                    <div class="metric-banner-val">{waste_pct}%</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with m_col2:
-                st.markdown(f"""
-                <div class="metric-banner">
-                    <div class="metric-banner-lbl">估算浪費成本</div>
-                    <div class="metric-banner-val">HK${waste_cost}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            with m_col3:
-                st.markdown(f"""
-                <div class="metric-banner">
-                    <div class="metric-banner-lbl">產生碳排放</div>
-                    <div class="metric-banner-val">{waste_carbon} kg</div>
+                <div style="background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 8px; overflow: hidden; margin-top: 10px;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem; color: #0F172A;">
+                        <tr style="background: #F1F5F9; border-bottom: 2px solid #CBD5E1; text-align: left;">
+                            <th style="padding: 10px 14px; color: #0F172A; font-weight: 800;">食材分類項目</th>
+                            <th style="padding: 10px 14px; color: #0F172A; font-weight: 800;">AI 置信度</th>
+                            <th style="padding: 10px 14px; color: #0F172A; font-weight: 800;">殘留面積佔比</th>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #E2E8F0;">
+                            <td style="padding: 10px 14px; font-weight: 700; color: #0F172A;">🍚 主食澱粉 (Carb - 白米飯/麵食)</td>
+                            <td style="padding: 10px 14px; color: #334155; font-weight: 600;">{items[0]['置信度 Confidence']}</td>
+                            <td style="padding: 10px 14px; font-weight: 800; color: #DC2626;">{items[0]['佔比 Coverage']}</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #E2E8F0;">
+                            <td style="padding: 10px 14px; font-weight: 700; color: #0F172A;">🥩 蛋白質肉類 (Protein - 焗豬扒/肉類)</td>
+                            <td style="padding: 10px 14px; color: #334155; font-weight: 600;">{items[1]['置信度 Confidence']}</td>
+                            <td style="padding: 10px 14px; font-weight: 800; color: #D97706;">{items[1]['佔比 Coverage']}</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 10px 14px; font-weight: 700; color: #0F172A;">🥦 蔬菜配菜 (Vegetables - 醬汁/配菜)</td>
+                            <td style="padding: 10px 14px; color: #334155; font-weight: 600;">{items[2]['置信度 Confidence']}</td>
+                            <td style="padding: 10px 14px; font-weight: 800; color: #2563EB;">{items[2]['佔比 Coverage']}</td>
+                        </tr>
+                    </table>
                 </div>
                 """, unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="voucher-box">
-                <h4 style="margin: 0 0 6px 0; color: #92400E;">🎉 Club 100 獎勵發放：{tier_name}</h4>
-                <div style="font-size: 1.05rem; font-weight: 800; color: #B45309;">{voucher_text}</div>
-                <div style="font-size: 0.8rem; margin-top: 4px; color: #78350F;">電子券已即時存入會員帳戶 ({member_id})，可於大家樂門市下次消費直接扣減。</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            st.markdown("##### 📋 Pipeline 2 生成之廚房 SOP 改進指令")
-            st.info(f"🔔 **後廚通知**：{dynamic_sop_alert}")
-
-            st.markdown("##### 🔍 各大食材分項佔比 (Macronutrient Coverage)")
-            st.table(pd.DataFrame(items))
-
-        else:
-            st.write("👈 請於左側確認設定並點擊「執行 TrayZero+ 智能審計」進行實時推論。")
-
-        st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("👉 請於左側上傳或拍攝餐盤照片，系統將自動啟動視覺審計與智能決策。")
 
 def render_mode2(engine, modules):
     st.markdown("### 📊 Mode 2: 總部營運與 ESG 大數據儀表板 (Operations HQ BI)")
@@ -812,45 +860,41 @@ def render_mode2(engine, modules):
         st.warning("⚠️ 目前資料庫尚無審計日誌，請先至 Mode 1 執行推論。")
         return
 
-    st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("累計審計餐盤總數", f"{len(df_all):,} 盤")
-    with m2:
-        st.metric("平均殘食率", f"{df_all['waste_ratio'].mean():.1f}%")
-    with m3:
-        st.metric("累計食物成本浪費", f"HK$ {df_all['estimated_cost_hkd'].sum():,.1f}")
-    with m4:
-        st.metric("累計 Scope 3 碳排放", f"{df_all['carbon_kg'].sum():,.2f} kg")
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("累計審計餐盤總數", f"{len(df_all):,} 盤")
+        with m2:
+            st.metric("平均殘食率", f"{df_all['waste_ratio'].mean():.1f}%")
+        with m3:
+            st.metric("累計食物成本浪費", f"HK$ {df_all['estimated_cost_hkd'].sum():,.1f}")
+        with m4:
+            st.metric("累計 Scope 3 碳排放", f"{df_all['carbon_kg'].sum():,.2f} kg")
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        st.markdown("#### 🍲 菜式平均殘食率排行 (Top Wasted Dishes)")
-        dish_summary = df_all.groupby("dish_name")["waste_ratio"].mean().reset_index()
-        chart_dish = alt.Chart(dish_summary).mark_bar(color="#DC2626").encode(
-            x=alt.X("waste_ratio:Q", title="平均殘食率 (%)"),
-            y=alt.Y("dish_name:N", sort="-x", title="餐點名稱")
-        ).properties(height=280)
-        st.altair_chart(chart_dish, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("#### 🍲 菜式平均殘食率排行 (Top Wasted Dishes)")
+            dish_summary = df_all.groupby("dish_name")["waste_ratio"].mean().reset_index()
+            chart_dish = alt.Chart(dish_summary).mark_bar(color="#DC2626").encode(
+                x=alt.X("waste_ratio:Q", title="平均殘食率 (%)"),
+                y=alt.Y("dish_name:N", sort="-x", title="餐點名稱")
+            ).properties(height=280)
+            st.altair_chart(chart_dish, use_container_width=True)
 
     with c2:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        st.markdown("#### 🏪 門市殘食率分佈 (Branch Benchmarks)")
-        branch_summary = df_all.groupby("branch_name")["waste_ratio"].mean().reset_index()
-        chart_branch = alt.Chart(branch_summary).mark_bar(color="#D97706").encode(
-            x=alt.X("waste_ratio:Q", title="平均殘食率 (%)"),
-            y=alt.Y("branch_name:N", sort="-x", title="分店")
-        ).properties(height=280)
-        st.altair_chart(chart_branch, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("#### 🏪 門市殘食率分佈 (Branch Benchmarks)")
+            branch_summary = df_all.groupby("branch_name")["waste_ratio"].mean().reset_index()
+            chart_branch = alt.Chart(branch_summary).mark_bar(color="#D97706").encode(
+                x=alt.X("waste_ratio:Q", title="平均殘食率 (%)"),
+                y=alt.Y("branch_name:N", sort="-x", title="分店")
+            ).properties(height=280)
+            st.altair_chart(chart_branch, use_container_width=True)
 
-    st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-    st.markdown("#### 📋 即時審計明細數據表 (Live Audit Records)")
-    st.dataframe(df_all, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("#### 📋 即時審計明細數據表 (Live Audit Records)")
+        st.dataframe(df_all, use_container_width=True)
 
 def render_mode3():
     st.markdown("### ⚙️ Mode 3: 菜單、分店與獎勵規則動態管理 (Dynamic Configuration)")
@@ -858,40 +902,37 @@ def render_mode3():
     tab1, tab2, tab3 = st.tabs(["🍛 菜單管理 (Dishes)", "🏪 門市管理 (Branches)", "🎁 獎勵規則 (Rewards)"])
     
     with tab1:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        df_dishes = get_live_dishes()
-        st.dataframe(df_dishes, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            df_dishes = get_live_dishes()
+            st.dataframe(df_dishes, use_container_width=True)
         
     with tab2:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        df_branches = get_live_branches()
-        st.dataframe(df_branches, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            df_branches = get_live_branches()
+            st.dataframe(df_branches, use_container_width=True)
         
     with tab3:
-        st.markdown('<div class="pos-card">', unsafe_allow_html=True)
-        df_rewards = get_live_rewards()
-        st.dataframe(df_rewards, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            df_rewards = get_live_rewards()
+            st.dataframe(df_rewards, use_container_width=True)
 
 # ==============================================================================
-# 8. Main Application Controller
+# 8. Main Application Controller (主程式入口)
 # ==============================================================================
 def main():
     inject_safe_css()
     init_db()
 
-    # 側邊欄設計
+    # 側邊欄品牌與導航
     if os.path.exists(LOGO_FILE_PNG):
         st.sidebar.image(LOGO_FILE_PNG, use_container_width=True)
     elif os.path.exists(LOGO_FILE_JPG):
         st.sidebar.image(LOGO_FILE_JPG, use_container_width=True)
     else:
-        st.sidebar.markdown("## 🍽️ Café de Coral")
+        st.sidebar.markdown("## 🍽️ 大家樂 Café de Coral")
 
-    st.sidebar.title("TrayZero+ 控制台")
-    st.sidebar.caption("大家樂集團 · 智能餐盤審計")
+    st.sidebar.markdown("### **TrayZero+ 控制台**")
+    st.sidebar.markdown("**大家樂集團 · 智能餐盤審計**")
     st.sidebar.markdown("---")
 
     mode = st.sidebar.radio(
