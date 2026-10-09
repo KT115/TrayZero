@@ -278,11 +278,9 @@ def init_db():
     if cur.fetchone()[0] == 0:
         default_dishes = [
             ("D01", "一哥焗豬扒飯 (Baked Pork Chop Rice)", "白米飯", "焗厚切豬扒"),
-            ("D02", "咖喱牛腩飯 (Curry Beef Brisket Rice)", "白米飯", "慢燉牛腩"),
-            ("D03", "滑蛋蝦仁飯 (Scrambled Egg Shrimp Rice)", "白米飯", "滑蛋蝦仁"),
-            ("D04", "香辣肉燥肉餅飯 (Minced Pork Patty Rice)", "白米飯", "煎肉餅"),
             ("D05", "焗肉醬意粉 (Baked Spaghetti Bolognese)", "意大利麵", "慢燉牛肉醬"),
-            ("D06", "車仔麵 (Kart Noodle)", "中式麵條", "牛腩/魚蛋/蘿蔔")
+            {"D03", "燒味飯 (Siu Mei rice)",  "白米飯", "燒味"},
+            {"D04", "干炒牛河 (Siu Mei rice)", "中式麵條", "牛肉"}
         ]
         cur.executemany("INSERT OR IGNORE INTO dishes VALUES (?,?,?,?)", default_dishes)
 
@@ -350,7 +348,7 @@ def get_live_dishes():
         df = pd.DataFrame([
             {"dish_id": "D01", "name": "一哥焗豬扒飯 (Baked Pork Chop Rice)", "main_carb": "白米飯", "protein": "焗厚切豬扒"},
             {"dish_id": "D02", "name": "焗肉醬意粉 (Baked Spaghetti Bolognese)", "main_carb": "意大利麵", "protein": "慢燉牛肉醬"},
-            {"dish_id": "D03", "name": "燒味飯 (Siu Mei rice)", "main_carb": "白米飯", "protein": "燒味"}
+            {"dish_id": "D03", "name": "燒味飯 (Siu Mei rice)", "main_carb": "白米飯", "protein": "燒味"},
             {"dish_id": "D04", "name": "干炒牛河 (Siu Mei rice)", "main_carb": "中式麵條", "protein": "牛肉"}
         ])
     return df
