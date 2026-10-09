@@ -950,10 +950,10 @@ def main():
     # 側邊欄企業模組狀態開關
     st.sidebar.markdown("---")
     st.sidebar.markdown("##### 企業模組狀態 (MODULES)")
-    mod_1 = st.sidebar.checkbox("M1: 營運監控 (Ops Core)", value=True)
-    mod_2 = st.sidebar.checkbox("M2: 深度分析 (BI Analytics)", value=True)
-    mod_3 = st.sidebar.checkbox("M3: 精準營銷 (Smart POS)", value=True)
-    mod_4 = st.sidebar.checkbox("M4: 會員閉環 (Loyalty Loop)", value=True)
+    mod_1 = st.sidebar.checkbox("營運監控 (Ops Core)", value=True)
+    mod_2 = st.sidebar.checkbox("深度分析 (BI Analytics)", value=True)
+    mod_3 = st.sidebar.checkbox("精準營銷 (Smart POS)", value=True)
+    mod_4 = st.sidebar.checkbox("會員閉環 (Loyalty Loop)", value=True)
 
     active_modules = {
         "mod1": mod_1,
