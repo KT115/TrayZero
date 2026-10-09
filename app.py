@@ -1,30 +1,30 @@
-import os
-import datetime
-import sqlite3
 import streamlit as st
 import pandas as pd
 import numpy as np
-from PIL import Image, ImageDraw
+import datetime
+import os
+import sqlite3
 import torch
+from PIL import Image, ImageDraw
+import altair as alt
 from transformers import (
     AutoImageProcessor, 
-    AutoModelForImageClassification,
+    AutoModelForImageClassification, 
     pipeline
 )
-import altair as alt
 
 # ==============================================================================
-# 0. Primary Streamlit Execution Configuration
+# 0. Page Configuration
 # ==============================================================================
 st.set_page_config(
-    page_title="TrayZero+ | 智能餐盤審計與會員獎勵系統", 
+    page_title="TrayZero+ | Café de Coral Smart Plate Audit", 
     page_icon="🍽️", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # ==============================================================================
-# 1. Global Paths & Fast-Casual POS Enterprise CSS Theme (高對比自適應主題)
+# 1. Global Paths & Fast-Casual POS Enterprise CSS Theme (高對比純白底主題)
 # ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRANCH_FILE = os.path.join(BASE_DIR, "master_branches.csv")
@@ -84,10 +84,6 @@ def inject_safe_css():
             color: #0F172A !important;
             font-weight: 600 !important;
         }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
-            color: #0F172A !important;
-            font-weight: 600 !important;
-        }
         [data-testid="stSidebar"] [data-testid="stImage"] {
             display: flex !important;
             justify-content: center !important;
@@ -125,20 +121,78 @@ def inject_safe_css():
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25) !important;
         }
 
-        /* 確保所有輸入框、下拉選單背景為純白、文字為深黑，邊框清晰 */
-        [data-baseweb="select"] > div,
-        [data-baseweb="input"] > div,
-        div[data-testid="stTextInputRootElement"] > div {
+        /* 🌟 徹底消滅深色 UI：所有輸入框、下拉選單、文本框、上傳器強制為純白背景 (#FFFFFF) 與深黑文字 (#0F172A) */
+        div[data-baseweb="select"],
+        div[data-baseweb="select"] *,
+        div[data-baseweb="input"],
+        div[data-baseweb="input"] *,
+        div[data-baseweb="base-input"],
+        div[data-baseweb="base-input"] *,
+        div[data-testid="stTextInputRootElement"],
+        div[data-testid="stTextInputRootElement"] *,
+        div[data-testid="stNumberInputContainer"],
+        div[data-testid="stNumberInputContainer"] *,
+        div[data-testid="stSelectbox"] div,
+        div[data-testid="stSelectbox"] span,
+        div[data-testid="stSelectbox"] svg,
+        input, select, textarea {
             background-color: #FFFFFF !important;
-            border: 1.5px solid #94A3B8 !important;
+            color: #0F172A !important;
+            -webkit-text-fill-color: #0F172A !important;
+            fill: #0F172A !important;
+        }
+
+        /* 邊框維持清晰的淺灰邊框 */
+        div[data-baseweb="select"] > div,
+        div[data-baseweb="base-input"],
+        div[data-testid="stTextInputRootElement"] > div,
+        div[data-testid="stNumberInputContainer"] > div {
+            border: 1.5px solid #CBD5E1 !important;
             border-radius: 8px !important;
         }
-        [data-baseweb="select"] *, 
-        [data-baseweb="input"] *, 
-        input, select, textarea {
+
+        /* 下拉選單彈出層 (Menu / Popover) 純白底黑字 */
+        div[data-baseweb="popover"],
+        div[data-baseweb="popover"] *,
+        ul[data-baseweb="menu"],
+        ul[data-baseweb="menu"] *,
+        li[data-baseweb="menu-item"],
+        li[data-baseweb="menu-item"] * {
+            background-color: #FFFFFF !important;
             color: #0F172A !important;
-            font-weight: 600 !important;
+            -webkit-text-fill-color: #0F172A !important;
         }
+
+        /* 🌟 徹底修復檔案上傳元件 (stFileUploader) 黑底問題：全部強制為純白底與深黑字 */
+        div[data-testid="stFileUploader"],
+        div[data-testid="stFileUploader"] *,
+        section[data-testid="stFileUploaderDropzone"],
+        section[data-testid="stFileUploaderDropzone"] *,
+        div[data-testid="stFileUploaderDropzone"],
+        div[data-testid="stFileUploaderDropzone"] *,
+        div[data-testid="stFileUploaderFile"],
+        div[data-testid="stFileUploaderFile"] *,
+        div[data-testid="stFileUploaderFileData"],
+        div[data-testid="stFileUploaderFileData"] *,
+        div[data-testid="stFileUploaderDropzoneInstructions"],
+        div[data-testid="stFileUploaderDropzoneInstructions"] * {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+            -webkit-text-fill-color: #0F172A !important;
+        }
+
+        section[data-testid="stFileUploaderDropzone"] {
+            border: 2px dashed #94A3B8 !important;
+            border-radius: 10px !important;
+        }
+
+        div[data-testid="stFileUploader"] button {
+            background-color: #F1F5F9 !important;
+            color: #0F172A !important;
+            border: 1px solid #CBD5E1 !important;
+        }
+
+        /* Label 標籤文字加粗深黑 */
         [data-testid="stSelectbox"] label,
         [data-testid="stTextInput"] label,
         [data-testid="stRadio"] label,
@@ -148,12 +202,12 @@ def inject_safe_css():
             font-size: 0.92rem !important;
         }
 
-        /* 原生指標卡片 (st.metric) 高對比顯色保證 */
+        /* 原生指標卡片 (st.metric) 高對比顯色保證，並防止數值因字體過大被截斷為 ... */
         [data-testid="stMetric"] {
             background-color: #FFFFFF !important;
             border: 1.5px solid #CBD5E1 !important;
             border-radius: 10px !important;
-            padding: 12px 16px !important;
+            padding: 12px 14px !important;
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
         }
         [data-testid="stMetric"] * {
@@ -167,7 +221,10 @@ def inject_safe_css():
         [data-testid="stMetricValue"] * {
             color: #0F172A !important;
             font-weight: 800 !important;
-            font-size: 1.65rem !important;
+            font-size: 1.35rem !important;
+            white-space: nowrap !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
         }
 
         /* Mode 3 分頁標籤 (Tabs) 防隱形 */
@@ -204,6 +261,12 @@ def inject_safe_css():
             margin: 14px 0 !important;
             color: #78350F !important;
         }
+
+        /* 容器邊框背景維持白色 */
+        [data-testid="stVerticalBlockBorderWrapper"],
+        [data-testid="stVerticalBlockBorderWrapper"] > div {
+            background-color: #FFFFFF !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -211,11 +274,7 @@ def inject_safe_css():
 # 2. Database Connection & Data Store (資料庫與本地儲存)
 # ==============================================================================
 def db_conn(): 
-    try:
-        conn = sqlite3.connect(DB_FILE, check_same_thread=False, timeout=10)
-        return conn
-    except Exception:
-        return sqlite3.connect("/tmp/trayzero_audit.db", check_same_thread=False)
+    return sqlite3.connect(DB_FILE, check_same_thread=False)
 
 def init_db():
     conn = db_conn()
@@ -273,16 +332,19 @@ def init_db():
     """)
     conn.commit()
 
-    # 初始化預設菜單
+    # 初始化預設菜單 (依據最新指示改為 4 種經典餐點)
+    default_dishes = [
+        ("D01", "一哥焗豬扒飯 (Baked Pork Chop Rice)", "白米飯", "焗厚切豬扒"),
+        ("D05", "焗肉醬意粉 (Baked Spaghetti Bolognese)", "意大利麵", "慢燉牛肉醬"),
+        ("D03", "燒味飯 (Siu Mei rice)", "白米飯", "燒味"),
+        ("D04", "干炒牛河 (Fried Beef Noodles)", "中式麵條", "牛肉")
+    ]
     cur.execute("SELECT COUNT(*) FROM dishes")
-    if cur.fetchone()[0] == 0:
-        default_dishes = [
-            ("D01", "一哥焗豬扒飯 (Baked Pork Chop Rice)", "白米飯", "焗厚切豬扒"),
-            ("D05", "焗肉醬意粉 (Baked Spaghetti Bolognese)", "意大利麵", "慢燉牛肉醬"),
-            {"D03", "燒味飯 (Siu Mei rice)",  "白米飯", "燒味"},
-            {"D04", "干炒牛河 (Siu Mei rice)", "中式麵條", "牛肉"}
-        ]
-        cur.executemany("INSERT OR IGNORE INTO dishes VALUES (?,?,?,?)", default_dishes)
+    dish_count = cur.fetchone()[0]
+    if dish_count == 0 or dish_count != 4:
+        cur.execute("DELETE FROM dishes")
+        cur.executemany("INSERT INTO dishes VALUES (?,?,?,?)", default_dishes)
+        conn.commit()
 
     # 初始化預設門市
     cur.execute("SELECT COUNT(*) FROM branches")
@@ -305,7 +367,7 @@ def init_db():
         ]
         cur.executemany("INSERT OR IGNORE INTO rewards VALUES (?,?,?,?,?,?)", default_rewards)
 
-    # 初始化預設審計日誌 (載入 120 筆多維度種子數據)
+    # 初始化預設審計日誌
     cur.execute("SELECT COUNT(*) FROM audit_logs")
     if cur.fetchone()[0] == 0 and os.path.exists(SEED_AUDIT_FILE):
         try:
@@ -347,9 +409,9 @@ def get_live_dishes():
     if df.empty:
         df = pd.DataFrame([
             {"dish_id": "D01", "name": "一哥焗豬扒飯 (Baked Pork Chop Rice)", "main_carb": "白米飯", "protein": "焗厚切豬扒"},
-            {"dish_id": "D02", "name": "焗肉醬意粉 (Baked Spaghetti Bolognese)", "main_carb": "意大利麵", "protein": "慢燉牛肉醬"},
+            {"dish_id": "D05", "name": "焗肉醬意粉 (Baked Spaghetti Bolognese)", "main_carb": "意大利麵", "protein": "慢燉牛肉醬"},
             {"dish_id": "D03", "name": "燒味飯 (Siu Mei rice)", "main_carb": "白米飯", "protein": "燒味"},
-            {"dish_id": "D04", "name": "干炒牛河 (Siu Mei rice)", "main_carb": "中式麵條", "protein": "牛肉"}
+            {"dish_id": "D04", "name": "干炒牛河 (Fried Beef Noodles)", "main_carb": "中式麵條", "protein": "牛肉"}
         ])
     return df
 
@@ -373,81 +435,83 @@ def get_live_branches():
 
 def get_live_rewards():
     conn = db_conn()
-    df = pd.read_sql_query("SELECT * FROM rewards WHERE is_active = 1 ORDER BY max_waste_ratio ASC", conn)
+    df = pd.read_sql_query("SELECT * FROM rewards WHERE is_active=1 ORDER BY max_waste_ratio ASC", conn)
     conn.close()
+    if df.empty and os.path.exists(REWARD_FILE):
+        try:
+            df = pd.read_csv(REWARD_FILE)
+            df = df[df["is_active"] == True]
+        except Exception:
+            pass
+    if df.empty:
+        df = pd.DataFrame([
+            {"reward_id": "R01", "tier_name": "極致光盤獎 (Ultra Clean)", "max_waste_ratio": 10.0, "reward_type": "Coupon + Points", "reward_description": "【$3 堂食現金券】+【50 綠色積分】+【凍檸茶半價券】", "is_active": True},
+            {"reward_id": "R02", "tier_name": "達標惜食獎 (Standard Clean)", "max_waste_ratio": 20.0, "reward_type": "Coupon", "reward_description": "【$2 堂食電子券】+【20 綠色積分】", "is_active": True},
+            {"reward_id": "R03", "tier_name": "支持環保獎 (Green Return)", "max_waste_ratio": 100.0, "reward_type": "Points", "reward_description": "【10 綠色環保積分】", "is_active": True}
+        ])
     return df
 
 def evaluate_customer_rewards(waste_ratio_pct, is_en=False):
     df_rew = get_live_rewards()
-    if df_rew.empty:
-        if waste_ratio_pct <= 10.0:
-            desc = "【$3 Cash Voucher】+【50 Green Points】" if is_en else "【$3 堂食現金券】+【50 綠色積分】+【凍檸茶半價券】"
-            tier = "Ultra Clean Plate" if is_en else "極致光盤獎 (Ultra Clean)"
-            return desc, tier, "#10B981"
-        elif waste_ratio_pct <= 20.0:
-            desc = "【$2 Dining Voucher】+【20 Green Points】" if is_en else "【$2 堂食電子券】+【20 綠色積分】"
-            tier = "Standard Clean Plate" if is_en else "達標惜食獎 (Standard Clean)"
-            return desc, tier, "#059669"
-        else:
-            desc = "【10 Green Points】" if is_en else "【10 綠色環保積分】"
-            tier = "Green Support" if is_en else "支持環保獎 (Green Return)"
-            return desc, tier, "#3B82F6"
-    for _, r in df_rew.iterrows():
-        if waste_ratio_pct <= float(r["max_waste_ratio"]):
-            return r["reward_description"], r["tier_name"], "#10B981"
-    desc = "【10 Green Points】" if is_en else "【10 綠色環保積分】"
-    tier = "Green Support" if is_en else "支持環保獎 (Green Return)"
-    return desc, tier, "#64748B"
+    for _, row in df_rew.iterrows():
+        if waste_ratio_pct <= float(row["max_waste_ratio"]):
+            tier = row["tier_name"]
+            desc = row["reward_description"]
+            color = "#10B981" if "極致" in tier or "Ultra" in tier else ("#3B82F6" if "達標" in tier or "Standard" in tier else "#F59E0B")
+            if is_en:
+                if "極致" in tier or "Ultra" in tier:
+                    return "【$3 Dine-in Cash Coupon】+【50 Green Points】+【Half-price Iced Lemon Tea】", "Ultra Clean Plate (0-10%)", color
+                elif "達標" in tier or "Standard" in tier:
+                    return "【$2 Dine-in Electronic Coupon】+【20 Green Points】", "Standard Food Saver (11-20%)", color
+                else:
+                    return "【10 Green Sustainability Points】", "Green Tray Return Incentive", color
+            return desc, tier, color
+    return ("【感謝支持減碳回收】獲得 5 綠色點數", "參與獎 (Participation)", "#6B7280")
 
 def save_record(r):
-    try:
-        conn = db_conn()
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO audit_logs (timestamp, audit_date, audit_month, branch_name, branch_level, dish_name, primary_waste, waste_ratio, waste_weight_g, cost_waste_hkd, co2_emission_kg, member_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            r["timestamp"], r["audit_date"], r["audit_month"], r["branch_name"],
-            r["branch_level"], r["dish_name"], r["primary_waste"],
-            r["waste_ratio"], r["waste_weight_g"], r["cost_waste_hkd"],
-            r["co2_emission_kg"], r["member_id"]
-        ))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"資料庫儲存異常: {e}")
-        
-    try:
-        if os.path.exists(SEED_AUDIT_FILE):
-            df_new = pd.DataFrame([r])
-            df_new.to_csv(SEED_AUDIT_FILE, mode='a', header=False, index=False, encoding='utf-8')
-    except Exception as e:
-        print(f"CSV 附加異常: {e}")
+    conn = db_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO audit_logs (
+            timestamp, audit_date, audit_month, branch_name, branch_level, dish_name, 
+            primary_waste, waste_ratio, waste_weight_g, cost_waste_hkd, co2_emission_kg, member_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        r.get("timestamp"),
+        r.get("audit_date"),
+        r.get("audit_month"),
+        r.get("branch_name"),
+        r.get("branch_level"),
+        r.get("dish_name"),
+        r.get("primary_waste"),
+        r.get("waste_ratio"),
+        r.get("waste_weight_g"),
+        r.get("cost_waste_hkd"),
+        r.get("co2_emission_kg"),
+        r.get("member_id")
+    ))
+    conn.commit()
+    conn.close()
 
 def get_records():
+    conn = db_conn()
     try:
-        conn = db_conn()
         df = pd.read_sql_query("SELECT * FROM audit_logs ORDER BY id DESC", conn)
-        conn.close()
-        if not df.empty:
-            return df
-    except Exception as e:
-        print(f"讀取資料庫異常: {e}")
-        
-    if os.path.exists(SEED_AUDIT_FILE):
-        return pd.read_csv(SEED_AUDIT_FILE)
-    return pd.DataFrame()
+    except Exception:
+        df = pd.DataFrame()
+    conn.close()
+    return df
 
 # ==============================================================================
-# 3. AI Engine (載入今日新微調之雙管線 Transformer 模型)
+# 3. AI Pipeline Loader (雙管線深度學習引擎)
 # ==============================================================================
-@st.cache_resource(show_spinner=False)
+@st.cache_resource
 def load_ai_engine():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     device_id = 0 if torch.cuda.is_available() else -1
     
     # --------------------------------------------------------------------------
-    # Pipeline 1: 視覺殘食審計 (今日新微調模型: kktlau115/trayzero-frozen-swin-model)
+    # Pipeline 1: 視覺殘食審計 (今日微調模型: kktlau115/trayzero-frozen-swin-model)
     # --------------------------------------------------------------------------
     p1_model_id = "kktlau115/trayzero-frozen-swin-model"
     try:
@@ -473,7 +537,7 @@ def load_ai_engine():
         clip_classifier = None
 
     # --------------------------------------------------------------------------
-    # Pipeline 2: 智能廚房 SOP 預警與會員激勵生成 (今日新微調模型: kktlau115/trayzero-flant5-sop-alert)
+    # Pipeline 2: 智能廚房 SOP 預警與會員激勵生成 (微調模型: kktlau115/trayzero-flant5-sop-alert)
     # --------------------------------------------------------------------------
     p2_model_id = "kktlau115/trayzero-flant5-sop-alert"
     try:
@@ -495,6 +559,9 @@ def detect_tray(image, engine, selected_dish="", carb_type_from_csv="", is_en=Fa
     image_rgb = image.convert("RGB")
     width, height = image_rgb.size
     
+    # --------------------------------------------------------------------------
+    # Pipeline 1: 視覺殘食審計 (Swin Transformer 預測)
+    # --------------------------------------------------------------------------
     inputs = engine["processor"](images=image_rgb, return_tensors="pt").to(engine["device"])
     with torch.no_grad():
         outputs = engine["model"](**inputs)
@@ -502,35 +569,23 @@ def detect_tray(image, engine, selected_dish="", carb_type_from_csv="", is_en=Fa
         if logits.shape[-1] == 5:
             probs = torch.nn.functional.softmax(logits, dim=-1)[0].cpu().numpy()
             pred_idx = int(np.argmax(probs))
-            class_midpoints = [0.03, 0.12, 0.30, 0.55, 0.85]
-            ratio = class_midpoints[pred_idx]
+            # 5 個殘食等級之校準中位數 (連續機率加權期望值，徹底解決固定 92% 或階梯跳躍問題)
+            class_midpoints = np.array([0.025, 0.125, 0.325, 0.600, 0.880])
+            ratio = float(np.sum(probs * class_midpoints))
+            model_conf = float(probs[pred_idx])
         elif logits.numel() == 1:
             raw_pred = logits.item()
             ratio = float(1.0 / (1.0 + np.exp(-raw_pred)))
+            model_conf = 0.90
         else:
             raw_pred = logits[0][0].item()
             ratio = float(1.0 / (1.0 + np.exp(-raw_pred)))
+            model_conf = 0.88
         ratio = max(0.0, min(1.0, ratio))
 
-    food_type_labels = [
-        "full untouched meal on a plate",
-        "mostly eaten leftover food",
-        "clean empty dish"
-    ]
-    if engine.get("clip") is not None:
-        type_res = engine["clip"](image_rgb, candidate_labels=food_type_labels)
-        top_type = type_res[0]["label"]
-        top_score = type_res[0]["score"]
-    else:
-        top_type = "mostly eaten leftover food"
-        top_score = 0.85
-
-    if "untouched" in top_type or "full" in top_type:
-        ratio = max(ratio, 0.92)
-    elif "clean" in top_type or "empty" in top_type:
-        ratio = min(ratio, 0.03)
-
-    ratio = max(0.0, min(1.0, ratio))
+    # 🌟 徹底移除 CLIP 暴力覆蓋殘食率的錯誤規則 (先前因 untouched 關鍵詞導致所有菜餚都被強制變為 92.0%)
+    # 完全回歸並信賴用戶訓練之微調 Swin Transformer 視覺模型預測結果！
+    top_score = model_conf
 
     # 6 級分級標準
     if ratio >= 0.90:
@@ -648,7 +703,8 @@ def render_mode1(engine, modules, is_en=False):
                     img_id = f"up_{uploaded_file.name}_{uploaded_file.size}"
 
             if image:
-                st.image(image, caption="Image for Audit" if is_en else "待審計影像", use_container_width=True)
+                # 🌟 依用戶明確指示：如果是上傳照片，左側不顯示重複照片，只在右側展示 AI 檢測標記圖
+                st.success("✅ " + ("Tray photo loaded. Real-time visual audit generated on the right ➔" if is_en else "餐盤照片已成功載入，AI 審計結果已於右側即時生成 ➔"))
             else:
                 st.info("💡 Please upload or capture a plate photo. The system will auto-audit upon ingest." if is_en else "💡 請上傳餐盤照片，系統將自動啟動視覺審計與數據記錄。")
 
@@ -707,7 +763,7 @@ def render_mode1(engine, modules, is_en=False):
                 with m_col1:
                     st.metric("Waste Ratio" if is_en else "殘食百分比", f"{waste_pct}%")
                 with m_col2:
-                    st.metric("Waste Cost" if is_en else "估算浪費成本", f"HK${waste_cost}")
+                    st.metric("Waste Cost" if is_en else "估算浪費成本", f"HK$ {waste_cost}")
                 with m_col3:
                     st.metric("Scope 3 CO2" if is_en else "產生碳排放", f"{waste_carbon} kg")
 
@@ -721,7 +777,7 @@ def render_mode1(engine, modules, is_en=False):
                 </div>
                 """, unsafe_allow_html=True)
 
-                # 🌟 各大食材分項佔比：進度條 + 高對比 HTML 表格，徹底杜絕隱形
+                # 🌟 各大食材分項佔比：進度條 + 高對比表格
                 st.markdown(f"##### 🔍 {'Macronutrient Coverage Breakdown' if is_en else '各大食材分項佔比 (Macronutrient Breakdown)'}")
                 
                 c_carb, c_prot, c_veg = st.columns(3)
@@ -799,7 +855,10 @@ def render_mode2(engine, modules, is_en=False):
             sel_b = "ALL" if ("All" in b_filter or "全部" in b_filter) else b_filter
         with c2:
             all_d_text = "🍱 All Menu Items" if is_en else "🍱 全部餐點品項"
-            dish_options = [all_d_text] + (df_d["name"].tolist() if not df_d.empty else [])
+            known_dishes = df_d["name"].tolist() if not df_d.empty else []
+            history_dishes = df_raw["dish_name"].dropna().unique().tolist() if "dish_name" in df_raw.columns else []
+            all_available_dishes = list(dict.fromkeys(known_dishes + history_dishes))
+            dish_options = [all_d_text] + all_available_dishes
             d_filter = st.selectbox("Menu Dimension (Dish Filter)" if is_en else "餐點維度 (Dimension 1B: Dish Filter)", dish_options)
             sel_d = "ALL" if ("All" in d_filter or "全部" in d_filter) else d_filter
 
@@ -811,43 +870,49 @@ def render_mode2(engine, modules, is_en=False):
         elif "audit_date" in df_filtered.columns:
             df_filtered["parsed_dt"] = pd.to_datetime(df_filtered["audit_date"], errors="coerce")
         else:
-            df_filtered["parsed_dt"] = pd.to_datetime(datetime.date.today())
+            df_filtered["parsed_dt"] = pd.Timestamp.now()
 
-    # 補全時間欄位
-    df_filtered["parsed_dt"] = df_filtered["parsed_dt"].fillna(pd.to_datetime(datetime.date.today()))
-    df_filtered["audit_date"] = df_filtered["parsed_dt"].dt.strftime("%Y-%m-%d")
-    df_filtered["audit_month"] = df_filtered["parsed_dt"].dt.strftime("%Y-%m")
-    df_filtered["audit_year"] = df_filtered["parsed_dt"].dt.strftime("%Y")
+    if "audit_date" not in df_filtered.columns or df_filtered["audit_date"].isna().all():
+        df_filtered["audit_date"] = df_filtered["parsed_dt"].dt.strftime("%Y-%m-%d")
+    if "audit_month" not in df_filtered.columns or df_filtered["audit_month"].isna().all():
+        df_filtered["audit_month"] = df_filtered["parsed_dt"].dt.strftime("%Y-%m")
+    if "audit_year" not in df_filtered.columns or df_filtered["audit_year"].isna().all():
+        df_filtered["audit_year"] = df_filtered["parsed_dt"].dt.strftime("%Y")
 
-    # 依時間維度過濾
-    now = datetime.datetime.now()
-    if "Today" in period_filter or "本日" in period_filter:
-        today_str = now.strftime("%Y-%m-%d")
-        df_filtered = df_filtered[df_filtered["audit_date"] == today_str]
-    elif "Week" in period_filter or "本周" in period_filter:
-        seven_days_ago = now - datetime.timedelta(days=7)
-        df_filtered = df_filtered[df_filtered["parsed_dt"] >= seven_days_ago]
-    elif "Month" in period_filter or "按月" in period_filter:
-        this_month_str = now.strftime("%Y-%m")
-        df_filtered = df_filtered[df_filtered["audit_month"] == this_month_str]
-    elif "Year" in period_filter or "按年" in period_filter:
-        this_year_str = str(now.year)
-        df_filtered = df_filtered[df_filtered["audit_year"] == this_year_str]
-
-    # 依門市與餐點過濾
+    # 應用門市維度過濾
     if sel_b != "ALL":
         df_filtered = df_filtered[df_filtered["branch_name"] == sel_b]
+    
+    # 應用菜單維度過濾
     if sel_d != "ALL":
         df_filtered = df_filtered[df_filtered["dish_name"] == sel_d]
 
-    n = len(df_filtered)
-    if n == 0:
-        st.warning("📭 No audit records found for the selected criteria. Try switching time period to 'All Time'." if is_en else "📭 目前選定的門市、餐點或時間區間尚無審計數據。建議切換時間維度至「全部歷史 (All Time)」。")
+    # 應用時間維度過濾
+    now = datetime.datetime.now()
+    if "本日" in period_filter or "Today" in period_filter:
+        today_str = now.strftime("%Y-%m-%d")
+        df_filtered = df_filtered[df_filtered["audit_date"] == today_str]
+    elif "本周" in period_filter or "This Week" in period_filter:
+        one_week_ago = now - datetime.timedelta(days=7)
+        df_filtered = df_filtered[df_filtered["parsed_dt"] >= one_week_ago]
+    elif "按月" in period_filter or "Monthly" in period_filter:
+        available_months = sorted(df_filtered["audit_month"].dropna().unique().tolist(), reverse=True)
+        if available_months:
+            chosen_month = st.selectbox("Select Target Audit Month" if is_en else "選擇目標審計月份", available_months)
+            df_filtered = df_filtered[df_filtered["audit_month"] == chosen_month]
+    elif "按年" in period_filter or "Yearly" in period_filter:
+        available_years = sorted(df_filtered["audit_year"].dropna().unique().tolist(), reverse=True)
+        if available_years:
+            chosen_year = st.selectbox("Select Target Audit Year" if is_en else "選擇目標審計年份", available_years)
+            df_filtered = df_filtered[df_filtered["audit_year"] == chosen_year]
+
+    if df_filtered.empty:
+        st.warning("⚠️ No matching audit records found for current filter criteria." if is_en else "⚠️ 所選維度組合目前無對應的審計數據，請放寬篩選條件。")
         return
 
-    # 核心統計值
-    avg_w = float(df_filtered["waste_ratio"].mean())
-    cost_col = "cost_waste_hkd" if "cost_waste_hkd" in df_filtered.columns else "estimated_cost_hkd"
+    n = len(df_filtered)
+    avg_w = float(df_filtered["waste_ratio"].mean()) if "waste_ratio" in df_filtered.columns else 0.0
+    cost_col = "cost_waste_hkd" if "cost_waste_hkd" in df_filtered.columns else "cost_loss_hkd"
     tot_hkd = float(df_filtered[cost_col].sum()) if cost_col in df_filtered.columns else 0.0
     co2_col = "co2_emission_kg" if "co2_emission_kg" in df_filtered.columns else "carbon_kg"
     tot_co2 = float(df_filtered[co2_col].sum()) if co2_col in df_filtered.columns else 0.0
